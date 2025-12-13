@@ -234,6 +234,20 @@ export class LGP {
         return true;
     }
 
+    removeFile(name: string): boolean {
+        const index = this.archive.toc.findIndex(item => item.filename === name);
+        if (index === -1) return false;
+        
+        // Remove from TOC
+        this.archive.toc.splice(index, 1);
+        this.archive.numFiles = this.archive.toc.length;
+        
+        // Remove from modified if present
+        delete this.modified[name];
+        
+        return true;
+    }
+
     writeString(view: DataView, pos: number, str: string, length: number): void {
         const encoder = new TextEncoder();
         const bytes = encoder.encode(str);

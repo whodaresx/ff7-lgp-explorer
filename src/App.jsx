@@ -10,6 +10,7 @@ import './App.css';
 
 function App() {
   const [lgp, setLgp] = useState(null);
+  const [archiveVersion, setArchiveVersion] = useState(0);
   const [archiveName, setArchiveName] = useState('');
   const [currentPath, setCurrentPath] = useState('');
   const [selectedIndices, setSelectedIndices] = useState(new Set());
@@ -27,8 +28,10 @@ function App() {
   const searchInputRef = useRef(null);
 
   // Build folder structure and file list from archive
+  // archiveVersion is used to trigger re-computation when archive is modified
   const { folders, files, totalSize } = useMemo(() => {
     if (!lgp) return { folders: new Map(), files: [], totalSize: 0 };
+    void archiveVersion; // Use archiveVersion to trigger re-computation
 
     const folderMap = new Map();
     const fileList = [];
@@ -79,7 +82,7 @@ function App() {
     });
 
     return { folders: folderMap, files: fileList, totalSize: total };
-  }, [lgp]);
+  }, [lgp, archiveVersion]);
 
   // Filter files based on current path and search query
   const displayFiles = useMemo(() => {
@@ -233,19 +236,18 @@ function App() {
       const data = new Uint8Array(buffer);
       lgp.setFile(targetFile.filename, data);
       setStatus(`Replaced ${targetFile.filename} with ${file.name}`);
-      // Force re-render
-      setLgp({ ...lgp });
+      setArchiveVersion(v => v + 1);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
     e.target.value = '';
   }, [lgp, files, selectedIndices]);
 
-  const handleInsert = useCallback(() => {
+  const handleAdd = useCallback(() => {
     insertInputRef.current?.click();
   }, []);
 
-  const handleInsertSelect = useCallback(async (e) => {
+  const handleAddSelect = useCallback(async (e) => {
     const inputFiles = e.target.files;
     if (!inputFiles || inputFiles.length === 0 || !lgp) return;
 
@@ -270,9 +272,26 @@ function App() {
     
     const skippedMsg = skipped > 0 ? ` (${skipped} skipped - already exist)` : '';
     setStatus(`Inserted ${inserted} file(s)${skippedMsg}`);
-    setLgp({ ...lgp });
+    setArchiveVersion(v => v + 1);
     e.target.value = '';
   }, [lgp]);
+
+  const handleRemove = useCallback(() => {
+    if (!lgp || selectedIndices.size === 0) return;
+    
+    const selectedFiles = files.filter(f => selectedIndices.has(f.tocIndex));
+    let removed = 0;
+    
+    for (const file of selectedFiles) {
+      if (lgp.removeFile(file.filename)) {
+        removed++;
+      }
+    }
+    
+    setSelectedIndices(new Set());
+    setStatus(`Removed ${removed} file(s)`);
+    setArchiveVersion(v => v + 1);
+  }, [lgp, files, selectedIndices]);
 
   const handleSelect = useCallback((index, modifiers) => {
     setSelectedIndices(prev => {
@@ -534,7 +553,8 @@ function App() {
         onSave={handleSave}
         onExtract={handleExtract}
         onReplace={handleReplace}
-        onInsert={handleInsert}
+        onAdd={handleAdd}
+        onRemove={handleRemove}
         hasArchive={!!lgp}
         hasSelection={selectedIndices.size > 0}
         searchQuery={searchQuery}
@@ -611,7 +631,7 @@ function App() {
         type="file"
         multiple
         style={{ display: 'none' }}
-        onChange={handleInsertSelect}
+        onChange={handleAddSelect}
       />
       
       {quickLookFile && (

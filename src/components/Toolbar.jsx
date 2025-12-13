@@ -12,7 +12,8 @@ const icons = {
   save: "M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8",
   extract: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3",
   replace: "M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3",
-  insert: "M12 5v14M5 12h14",
+  add: "M12 5v14M5 12h14",
+  remove: "M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2",
   search: "M11 17.25a6.25 6.25 0 110-12.5 6.25 6.25 0 010 12.5zM16 16l4.5 4.5",
 };
 
@@ -21,7 +22,8 @@ export const Toolbar = forwardRef(function Toolbar({
   onSave, 
   onExtract, 
   onReplace, 
-  onInsert,
+  onAdd,
+  onRemove,
   hasArchive,
   hasSelection,
   searchQuery,
@@ -47,8 +49,11 @@ export const Toolbar = forwardRef(function Toolbar({
         <button onClick={onReplace} disabled={!hasSelection}>
           <Icon d={icons.replace} /> Replace
         </button>
-        <button onClick={onInsert} disabled={!hasArchive}>
-          <Icon d={icons.insert} /> Insert
+        <button onClick={onAdd} disabled={!hasArchive}>
+          <Icon d={icons.add} /> Add
+        </button>
+        <button onClick={onRemove} disabled={!hasSelection}>
+          <Icon d={icons.remove} /> Remove
         </button>
       </div>
       
