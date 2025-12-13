@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import './Toolbar.css';
 
 const Icon = ({ d, size = 16 }) => (
@@ -15,7 +16,7 @@ const icons = {
   search: "M11 17.25a6.25 6.25 0 110-12.5 6.25 6.25 0 010 12.5zM16 16l4.5 4.5",
 };
 
-export function Toolbar({ 
+export const Toolbar = forwardRef(function Toolbar({ 
   onOpen, 
   onSave, 
   onExtract, 
@@ -25,7 +26,7 @@ export function Toolbar({
   hasSelection,
   searchQuery,
   onSearchChange
-}) {
+}, ref) {
   return (
     <div className="toolbar">
       <div className="toolbar-group">
@@ -58,6 +59,7 @@ export function Toolbar({
           <Icon d={icons.search} size={14} />
         </span>
         <input
+          ref={ref}
           type="text"
           placeholder="Search files..."
           value={searchQuery}
@@ -81,4 +83,4 @@ export function Toolbar({
       </div>
     </div>
   );
-}
+});

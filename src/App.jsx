@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import JSZip from 'jszip';
 import { LGP } from './lgp.ts';
 import { Toolbar } from './components/Toolbar.jsx';
 import { FileList } from './components/FileList.jsx';
@@ -22,6 +23,8 @@ function App() {
   const fileInputRef = useRef(null);
   const replaceInputRef = useRef(null);
   const insertInputRef = useRef(null);
+  const fileListRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   // Build folder structure and file list from archive
   const { folders, files, totalSize } = useMemo(() => {
@@ -170,6 +173,7 @@ function App() {
     const selectedFiles = files.filter(f => selectedIndices.has(f.tocIndex));
     
     if (selectedFiles.length === 1) {
+      // Single file: download directly
       const file = selectedFiles[0];
       const data = lgp.getFile(file.filename);
       if (!data) {
@@ -186,29 +190,27 @@ function App() {
       URL.revokeObjectURL(url);
       setStatus(`Extracted ${file.filename}`);
     } else {
-      // Extract multiple files with delay to avoid browser blocking
-      setStatus(`Extracting ${selectedFiles.length} files...`);
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
+      // Multiple files: create a zip
+      setStatus(`Creating zip with ${selectedFiles.length} files...`);
+      const zip = new JSZip();
+      
+      for (const file of selectedFiles) {
         const data = lgp.getFile(file.filename);
-        if (!data) continue;
-        
-        const blob = new Blob([data], { type: 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.filename;
-        a.click();
-        URL.revokeObjectURL(url);
-        
-        // Small delay between downloads to prevent browser blocking
-        if (i < selectedFiles.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+        if (data) {
+          zip.file(file.filename, data);
         }
       }
-      setStatus(`Extracted ${selectedFiles.length} files`);
+      
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${archiveName.replace('.lgp', '')}_extract.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus(`Extracted ${selectedFiles.length} files as zip`);
     }
-  }, [lgp, files, selectedIndices]);
+  }, [lgp, files, selectedIndices, archiveName]);
 
   const handleReplace = useCallback(() => {
     if (selectedIndices.size !== 1) {
@@ -274,10 +276,10 @@ function App() {
 
   const handleSelect = useCallback((index, modifiers) => {
     setSelectedIndices(prev => {
-      const next = new Set(prev);
+      const next = new Set();
       
       if (modifiers.shift && lastSelectedIndex.current !== null) {
-        // Range select
+        // Range select - select from anchor to clicked item
         const visibleIndices = displayFiles
           .filter(f => !f.isFolder)
           .map(f => f.tocIndex);
@@ -292,8 +294,11 @@ function App() {
             next.add(visibleIndices[i]);
           }
         }
+        // Don't update lastSelectedIndex on shift-click (keep anchor)
+        return next;
       } else if (modifiers.ctrl) {
-        // Toggle select
+        // Toggle select - keep existing and toggle clicked
+        for (const i of prev) next.add(i);
         if (next.has(index)) {
           next.delete(index);
         } else {
@@ -301,7 +306,6 @@ function App() {
         }
       } else {
         // Single select
-        next.clear();
         next.add(index);
       }
       
@@ -352,7 +356,7 @@ function App() {
     setQuickLookFile(null);
   }, []);
 
-  // Keyboard handling for QuickLook
+  // Keyboard handling for QuickLook and navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
       // Don't trigger if typing in an input
@@ -364,11 +368,92 @@ function App() {
         e.preventDefault();
         openQuickLook();
       }
+      
+      // Slash key or Cmd/Ctrl+F focuses search
+      if ((e.key === '/' || (e.key === 'f' && (e.metaKey || e.ctrlKey))) && lgp) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      
+      // Arrow key and page navigation
+      const navKeys = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'];
+      if (navKeys.includes(e.code) && lgp && displayFiles.length > 0) {
+        e.preventDefault();
+        
+        // Get only files (not folders) from displayFiles
+        const fileItems = displayFiles.filter(f => !f.isFolder);
+        if (fileItems.length === 0) return;
+        
+        // Find current selection position (use last selected as anchor for shift)
+        let currentIndex = -1;
+        if (selectedIndices.size >= 1) {
+          // For shift selection, find position of last selected item
+          const selectedTocIndex = [...selectedIndices].pop();
+          currentIndex = fileItems.findIndex(f => f.tocIndex === selectedTocIndex);
+        }
+        
+        // Find anchor position for shift selection
+        let anchorIndex = currentIndex;
+        if (e.shiftKey && lastSelectedIndex.current !== null) {
+          anchorIndex = fileItems.findIndex(f => f.tocIndex === lastSelectedIndex.current);
+          if (anchorIndex === -1) anchorIndex = currentIndex;
+        }
+        
+        let newIndex;
+        const pageSize = fileListRef.current?.getPageSize() || 10;
+        
+        switch (e.code) {
+          case 'ArrowUp':
+            newIndex = currentIndex <= 0 ? 0 : currentIndex - 1;
+            break;
+          case 'ArrowDown':
+            newIndex = currentIndex < 0 ? 0 : Math.min(currentIndex + 1, fileItems.length - 1);
+            break;
+          case 'PageUp':
+            newIndex = currentIndex <= 0 ? 0 : Math.max(0, currentIndex - pageSize);
+            break;
+          case 'PageDown':
+            newIndex = currentIndex < 0 ? 0 : Math.min(currentIndex + pageSize, fileItems.length - 1);
+            break;
+          case 'Home':
+            newIndex = 0;
+            break;
+          case 'End':
+            newIndex = fileItems.length - 1;
+            break;
+          default:
+            return;
+        }
+        
+        if (e.shiftKey && anchorIndex !== -1) {
+          // Range select from anchor to new position
+          const rangeStart = Math.min(anchorIndex, newIndex);
+          const rangeEnd = Math.max(anchorIndex, newIndex);
+          const newSelection = new Set();
+          for (let i = rangeStart; i <= rangeEnd; i++) {
+            newSelection.add(fileItems[i].tocIndex);
+          }
+          setSelectedIndices(newSelection);
+          // Don't update lastSelectedIndex (keep anchor)
+        } else {
+          // Single select
+          const newFile = fileItems[newIndex];
+          setSelectedIndices(new Set([newFile.tocIndex]));
+          lastSelectedIndex.current = newFile.tocIndex;
+        }
+        
+        // Scroll to the new position
+        const displayIndex = displayFiles.findIndex(f => f.tocIndex === fileItems[newIndex].tocIndex);
+        if (displayIndex >= 0 && fileListRef.current) {
+          fileListRef.current.scrollToIndex(displayIndex + (currentPath ? 1 : 0));
+        }
+      }
     };
     
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndices, quickLookFile, openQuickLook]);
+  }, [selectedIndices, quickLookFile, openQuickLook, lgp, displayFiles, currentPath]);
 
   // Drag & drop handlers
   const handleDragEnter = useCallback((e) => {
@@ -444,6 +529,7 @@ function App() {
         </div>
       )}
       <Toolbar
+        ref={searchInputRef}
         onOpen={handleOpen}
         onSave={handleSave}
         onExtract={handleExtract}
@@ -484,6 +570,7 @@ function App() {
         
         {lgp ? (
           <FileList
+            ref={fileListRef}
             files={displayFiles}
             currentPath={currentPath}
             selectedIndices={selectedIndices}

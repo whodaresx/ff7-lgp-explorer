@@ -1,18 +1,18 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { getFileType, formatFileSize } from '../utils/fileTypes.ts';
 import './FileList.css';
 
 const ROW_HEIGHT = 32;
 
-export function FileList({ 
+export const FileList = forwardRef(function FileList({ 
   files, 
   currentPath,
   selectedIndices, 
   onSelect, 
   onNavigate,
   onDoubleClick
-}) {
+}, ref) {
   const parentRef = useRef(null);
   
   // Scroll to top when path changes
@@ -33,6 +33,21 @@ export function FileList({
     estimateSize: () => ROW_HEIGHT,
     overscan: 10,
   });
+
+  useImperativeHandle(ref, () => ({
+    scrollToIndex: (index) => {
+      virtualizer.scrollToIndex(index, { align: 'auto' });
+    },
+    getPageSize: () => {
+      if (!parentRef.current) return 10;
+      return Math.floor(parentRef.current.clientHeight / ROW_HEIGHT);
+    },
+    getVisibleRange: () => {
+      const items = virtualizer.getVirtualItems();
+      if (items.length === 0) return { start: 0, end: 0 };
+      return { start: items[0].index, end: items[items.length - 1].index };
+    }
+  }), [virtualizer]);
 
   const handleRowClick = useCallback((e, item) => {
     if (item.isParent) {
@@ -122,4 +137,4 @@ export function FileList({
       </div>
     </div>
   );
-}
+});

@@ -12,6 +12,7 @@
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.13",
     "binary-parser": "^2.3.0",
+    "jszip": "^3.10.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
