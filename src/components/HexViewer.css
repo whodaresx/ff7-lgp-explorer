@@ -1,0 +1,125 @@
+.hex-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.hex-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.hex-toolbar-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.hex-segmented {
+  display: flex;
+}
+
+.hex-segment {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: 0;
+  border-right: none;
+}
+
+.hex-segment:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.hex-segment:last-child {
+  border-radius: 0 4px 4px 0;
+  border-right: 1px solid var(--border);
+}
+
+.hex-segment.active {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.hex-segment.active + .hex-segment {
+  border-left-color: var(--accent);
+}
+
+.hex-header {
+  display: flex;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.hex-header .hex-offset {
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.hex-header .hex-ascii {
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.hex-scroll {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-primary);
+}
+
+.hex-row {
+  display: flex;
+  padding: 0 12px;
+  line-height: 20px;
+}
+
+.hex-row:hover {
+  background: var(--row-hover);
+}
+
+.hex-offset {
+  width: 80px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.hex-bytes {
+  flex: 1;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+.hex-zero {
+  opacity: 0.35;
+}
+
+.hex-ascii {
+  flex-shrink: 0;
+  padding-left: 16px;
+  color: var(--text-secondary);
+  border-left: 1px solid var(--border);
+  margin-left: 16px;
+}
+
+.plaintext-scroll {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-primary);
+}
+
+.plaintext-content {
+  margin: 0;
+  padding: 12px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
