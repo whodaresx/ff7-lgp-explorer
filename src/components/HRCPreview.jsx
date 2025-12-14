@@ -55,7 +55,7 @@ export function HRCPreview({ data, filename, onLoadFile }) {
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
-        controls.screenSpacePanning = false;
+        controls.screenSpacePanning = true;
         controls.minPolarAngle = 0.1;
         controls.maxPolarAngle = Math.PI - 0.1;
 

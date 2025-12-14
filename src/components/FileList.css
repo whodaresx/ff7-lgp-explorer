@@ -18,6 +18,20 @@
   letter-spacing: 0.5px;
 }
 
+.file-list-header .sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.file-list-header .sortable:hover {
+  color: var(--text-primary);
+}
+
+.sort-arrow {
+  font-size: 10px;
+  margin-left: 4px;
+}
+
 .file-list-scroll {
   flex: 1;
   overflow: auto;

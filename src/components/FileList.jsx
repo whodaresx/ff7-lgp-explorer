@@ -11,7 +11,10 @@ export const FileList = forwardRef(function FileList({
   selectedIndices, 
   onSelect, 
   onNavigate,
-  onDoubleClick
+  onDoubleClick,
+  sortColumn,
+  sortDirection,
+  onSort
 }, ref) {
   const parentRef = useRef(null);
   
@@ -75,10 +78,18 @@ export const FileList = forwardRef(function FileList({
   return (
     <div className="file-list-container">
       <div className="file-list-header">
-        <span className="col-index">#</span>
-        <span className="col-name">Name</span>
-        <span className="col-size">Size</span>
-        <span className="col-type">Type</span>
+        <span className="col-index sortable" onClick={() => onSort('index')}>
+          # {sortColumn === 'index' && <span className="sort-arrow">{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+        </span>
+        <span className="col-name sortable" onClick={() => onSort('name')}>
+          Name {sortColumn === 'name' && <span className="sort-arrow">{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+        </span>
+        <span className="col-size sortable" onClick={() => onSort('size')}>
+          Size {sortColumn === 'size' && <span className="sort-arrow">{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+        </span>
+        <span className="col-type sortable" onClick={() => onSort('type')}>
+          Type {sortColumn === 'type' && <span className="sort-arrow">{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+        </span>
       </div>
       
       <div ref={parentRef} className="file-list-scroll">

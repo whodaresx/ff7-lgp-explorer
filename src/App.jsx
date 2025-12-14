@@ -5,7 +5,7 @@ import { Toolbar } from './components/Toolbar.jsx';
 import { FileList } from './components/FileList.jsx';
 import { StatusBar } from './components/StatusBar.jsx';
 import { QuickLook } from './components/QuickLook.jsx';
-import { formatTotalSize } from './utils/fileTypes.ts';
+import { formatTotalSize, getFileType } from './utils/fileTypes.ts';
 import './App.css';
 
 function App() {
@@ -18,6 +18,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [quickLookFile, setQuickLookFile] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [sortColumn, setSortColumn] = useState('index');
+  const [sortDirection, setSortDirection] = useState('asc');
   const lastSelectedIndex = useRef(null);
   const dragCounter = useRef(0);
 
@@ -121,14 +123,42 @@ function App() {
       const filteredFolders = subfolders.filter(f =>
         f.name.toLowerCase().includes(query)
       );
-      return [...filteredFolders, ...filtered];
+      subfolders.length = 0;
+      subfolders.push(...filteredFolders);
     }
 
-    // Sort folders first, then files
+    // Sort folders first by name
     subfolders.sort((a, b) => a.name.localeCompare(b.name));
     
-    return [...subfolders, ...filtered];
-  }, [files, folders, currentPath, searchQuery]);
+    // Sort files
+    const sortedFiles = [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortColumn) {
+        case 'index':
+          cmp = a.tocIndex - b.tocIndex;
+          break;
+        case 'name':
+          cmp = a.filename.localeCompare(b.filename);
+          break;
+        case 'size':
+          cmp = a.filesize - b.filesize;
+          break;
+        case 'type': {
+          const typeA = getFileType(a.filename);
+          const typeB = getFileType(b.filename);
+          cmp = typeA.localeCompare(typeB);
+          // Secondary sort by name when types are equal
+          if (cmp === 0) {
+            cmp = a.filename.localeCompare(b.filename);
+          }
+          break;
+        }
+      }
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+    
+    return [...subfolders, ...sortedFiles];
+  }, [files, folders, currentPath, searchQuery, sortColumn, sortDirection]);
 
   const handleOpen = useCallback(() => {
     fileInputRef.current?.click();
@@ -376,6 +406,15 @@ function App() {
     setSearchQuery(query);
     setSelectedIndices(new Set());
   }, []);
+
+  const handleSort = useCallback((column) => {
+    if (sortColumn === column) {
+      setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  }, [sortColumn]);
 
   const openQuickLookForFile = useCallback((file) => {
     if (!lgp || !file) return;
@@ -661,6 +700,9 @@ function App() {
             onSelect={handleSelect}
             onNavigate={handleNavigate}
             onDoubleClick={openQuickLookForFile}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={handleSort}
           />
         ) : (
           <div className="empty-state">
