@@ -117,7 +117,7 @@ export interface PModel {
     polygons: PPolygon[];
     hundrets: PHundret[];
     groups: PGroup[];
-    boundingBox: PBoundingBox;
+    boundingBox: PBoundingBox | null;
     normalIndices: number[];
 }
 
@@ -300,17 +300,20 @@ export class PFile {
             offset += 56;
         }
 
-        // Read bounding box (28 bytes)
-        const boundingBox: PBoundingBox = {
-            unknown: view.getInt32(offset, true),
-            maxX: view.getFloat32(offset + 4, true),
-            maxY: view.getFloat32(offset + 8, true),
-            maxZ: view.getFloat32(offset + 12, true),
-            minX: view.getFloat32(offset + 16, true),
-            minY: view.getFloat32(offset + 20, true),
-            minZ: view.getFloat32(offset + 24, true),
-        };
-        offset += 28;
+        // Read bounding box (28 bytes) - only present when mirex_g != 0
+        let boundingBox: PBoundingBox | null = null;
+        if (header.mirex_g !== 0) {
+            boundingBox = {
+                unknown: view.getInt32(offset, true),
+                maxX: view.getFloat32(offset + 4, true),
+                maxY: view.getFloat32(offset + 8, true),
+                maxZ: view.getFloat32(offset + 12, true),
+                minX: view.getFloat32(offset + 16, true),
+                minY: view.getFloat32(offset + 20, true),
+                minZ: view.getFloat32(offset + 24, true),
+            };
+            offset += 28;
+        }
 
         // Read normal indices
         const normalIndices: number[] = [];
