@@ -4,7 +4,8 @@ import { TexPreview } from './TexPreview.jsx';
 import { PModelPreview } from './PModelPreview.jsx';
 import { SkeletonPreview } from './SkeletonPreview.jsx';
 import { HRCPreview } from './HRCPreview.jsx';
-import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isHRCFile } from '../utils/fileTypes.ts';
+import { RSDPreview } from './RSDPreview.jsx';
+import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isHRCFile, isRSDFile } from '../utils/fileTypes.ts';
 import './QuickLook.css';
 
 const HEX_COLUMN_WIDTHS = {
@@ -18,6 +19,7 @@ export function QuickLook({ filename, data, onClose, onLoadFile }) {
   const isPFile = isPModelFile(filename);
   const isSkeletonFile = isBattleSkeletonFile(filename);
   const isHRC = isHRCFile(filename);
+  const isRSD = isRSDFile(filename);
   const [hexColumns, setHexColumns] = useState(16);
 
   const modalWidth = useMemo(() => {
@@ -25,11 +27,13 @@ export function QuickLook({ filename, data, onClose, onLoadFile }) {
     if (isPFile) return 900;
     if (isSkeletonFile) return 900;
     if (isHRC) return 900;
+    if (isRSD) return 900;
     return HEX_COLUMN_WIDTHS[hexColumns] || 900;
-  }, [isTexFile, isPFile, isSkeletonFile, isHRC, hexColumns]);
+  }, [isTexFile, isPFile, isSkeletonFile, isHRC, isRSD, hexColumns]);
 
   const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' || e.key === ' ') {
+      e.preventDefault();
       onClose();
     }
   }, [onClose]);
@@ -64,6 +68,8 @@ export function QuickLook({ filename, data, onClose, onLoadFile }) {
             <SkeletonPreview data={data} filename={filename} onLoadFile={onLoadFile} />
           ) : isHRC ? (
             <HRCPreview data={data} filename={filename} onLoadFile={onLoadFile} />
+          ) : isRSD ? (
+            <RSDPreview data={data} onLoadFile={onLoadFile} />
           ) : (
             <HexViewer data={data} columns={hexColumns} onColumnsChange={setHexColumns} />
           )}
@@ -75,7 +81,8 @@ export function QuickLook({ filename, data, onClose, onLoadFile }) {
           {isPFile && <span>3D Model</span>}
           {isSkeletonFile && <span>Battle Skeleton</span>}
           {isHRC && <span>Field Skeleton</span>}
-          {!isTexFile && !isPFile && !isSkeletonFile && !isHRC && <span>Hex View</span>}
+          {isRSD && <span>Resource Definition</span>}
+          {!isTexFile && !isPFile && !isSkeletonFile && !isHRC && !isRSD && <span>Hex View</span>}
         </div>
       </div>
     </div>

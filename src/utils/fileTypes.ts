@@ -43,11 +43,18 @@ export function isHRCFile(filename: string): boolean {
   return filename.toLowerCase().endsWith('.hrc');
 }
 
+export function isRSDFile(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.rsd');
+}
+
 export function isPModelFile(filename: string): boolean {
   const lower = filename.toLowerCase();
 
   // Check for .p extension
   if (lower.endsWith('.p')) return true;
+
+  // Check for .p00 through .p99 extensions (used in magic.lgp)
+  if (/\.p\d{2}$/.test(lower)) return true;
 
   // Check 4-letter battle model naming convention
   // **am to **bz are battle models (P files without extension)

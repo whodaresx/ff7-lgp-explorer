@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils';
 import { PFile } from '../pfile.ts';
 import './PModelPreview.css';
@@ -47,14 +47,11 @@ export function PModelPreview({ data }) {
         renderer.setPixelRatio(window.devicePixelRatio);
         container.appendChild(renderer.domElement);
 
-        // Controls - turntable style rotation
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.screenSpacePanning = true;
-        // Limit vertical rotation to prevent flipping
-        controls.minPolarAngle = 0.1;
-        controls.maxPolarAngle = Math.PI - 0.1;
+        // Controls - trackball style for unrestricted rotation
+        const controls = new TrackballControls(camera, renderer.domElement);
+        controls.rotateSpeed = 2.0;
+        controls.zoomSpeed = 1.2;
+        controls.panSpeed = 0.8;
 
         // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, useRetroShading ? 0.4 : 0.6);
