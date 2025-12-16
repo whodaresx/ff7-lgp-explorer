@@ -275,7 +275,7 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
         if (isBattleLocation && loadedParts) {
             // Render battle location parts with textures
             loadedParts.forEach((part, partIndex) => {
-                const meshes = createTexturedMeshes(part.pfile, loadedTextures || [], cullingEnabled);
+                const meshes = createTexturedMeshes(part.pfile, loadedTextures || [], cullingEnabled, partIndex);
                 meshes.forEach(mesh => {
                     mesh.name = part.name;
                     scene.add(mesh);
@@ -610,7 +610,8 @@ function renderBattleSkeleton(bones, boneModels, textures, animationPack, weapon
         const boneModel = boneModels[boneIdx];
         if (boneModel && boneModel.pfile) {
             // Pass flipped=true because modelContainer has rotation.x = PI which reverses winding order
-            const meshGroup = createMeshFromPFile(boneModel.pfile, textures, true, cullingEnabled);
+            // Pass boneIdx as meshIndex for polygon offset ordering
+            const meshGroup = createMeshFromPFile(boneModel.pfile, textures, true, cullingEnabled, boneIdx);
             meshGroup.applyMatrix4(currentMatrix);
             skeletonGroup.add(meshGroup);
             
@@ -659,7 +660,8 @@ function renderBattleSkeleton(bones, boneModels, textures, animationPack, weapon
 
             // Create weapon mesh and add to weapon group
             // Pass flipped=true because modelContainer has rotation.x = PI which reverses winding order
-            const weaponMesh = createMeshFromPFile(weaponModel.pfile, textures, true, cullingEnabled);
+            // Use high meshIndex (bones.length + 10) so weapon renders on top of body parts
+            const weaponMesh = createMeshFromPFile(weaponModel.pfile, textures, true, cullingEnabled, bones.length + 10);
             weaponGroup.add(weaponMesh);
 
             // Add weapon as sibling to skeletonGroup (both are children of modelContainer)
@@ -736,7 +738,8 @@ function getMaterialSide(hundret, flipped = false, cullingEnabled = true) {
 // Create mesh from P file data with textures, normals, and proper culling
 // flipped: true if the model will have rotation.x = PI applied (inverts winding order)
 // cullingEnabled: whether to apply face culling or render double-sided
-function createMeshFromPFile(pfile, textures, flipped = false, cullingEnabled = true) {
+// meshIndex: global index for polygon offset to prevent z-fighting across multiple P files
+function createMeshFromPFile(pfile, textures, flipped = false, cullingEnabled = true, meshIndex = 0) {
     const { vertices, polygons, vertexColors, texCoords, groups, normals, hundrets } = pfile.model;
     const meshGroup = new THREE.Group();
     const hasFileNormals = normals && normals.length > 0;
@@ -826,7 +829,10 @@ function createMeshFromPFile(pfile, textures, flipped = false, cullingEnabled = 
         // Get material side based on hundret culling flags
         const side = getMaterialSide(hundret, flipped, cullingEnabled);
 
-        // Create material
+        // Use polygon offset to prevent z-fighting on overlapping coplanar polys
+        // Later groups render "on top" of earlier ones (like FF7's original painter's algorithm)
+        // Combine meshIndex (which P file) and groupIdx (which group within) for global ordering
+        const globalOrder = meshIndex * 100 + groupIdx;
         const material = isTextured
             ? new THREE.MeshLambertMaterial({
                 map: textures[group.texID],
@@ -834,20 +840,29 @@ function createMeshFromPFile(pfile, textures, flipped = false, cullingEnabled = 
                 side,
                 transparent: true,
                 alphaTest: 0.1,
+                polygonOffset: true,
+                polygonOffsetFactor: 0,
+                polygonOffsetUnits: -globalOrder * 4,
             })
             : new THREE.MeshLambertMaterial({
                 vertexColors: true,
                 side,
+                polygonOffset: true,
+                polygonOffsetFactor: 0,
+                polygonOffsetUnits: -globalOrder * 4,
             });
 
-        meshGroup.add(new THREE.Mesh(geometry, material));
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.renderOrder = globalOrder; // Ensure consistent render order
+        meshGroup.add(mesh);
     }
 
     return meshGroup;
 }
 
 // Create textured meshes from P file (for battle locations - not flipped)
-function createTexturedMeshes(pfile, textures, cullingEnabled = true) {
+// partIndex: global index for polygon offset to prevent z-fighting across multiple parts
+function createTexturedMeshes(pfile, textures, cullingEnabled = true, partIndex = 0) {
     const { vertices, polygons, texCoords, vertexColors, groups, normals, hundrets } = pfile.model;
     const meshes = [];
     const hasFileNormals = normals && normals.length > 0;
@@ -939,15 +954,23 @@ function createTexturedMeshes(pfile, textures, cullingEnabled = true) {
         const side = getMaterialSide(hundret, false, cullingEnabled);
 
         const texture = textures[texID] || null;
+        // Use polygon offset to prevent z-fighting on overlapping coplanar polys
+        // Combine partIndex (which P file) and groupIdx (which group within) for global ordering
+        const globalOrder = partIndex * 100 + groupIdx;
         const material = new THREE.MeshLambertMaterial({
             map: texture,
             vertexColors: true,
             side,
             transparent: texture !== null,
             alphaTest: texture ? 0.1 : 0,
+            polygonOffset: true,
+            polygonOffsetFactor: 0,
+            polygonOffsetUnits: -globalOrder * 4,
         });
 
-        meshes.push(new THREE.Mesh(geometry, material));
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.renderOrder = globalOrder;
+        meshes.push(mesh);
     }
 
     return meshes;

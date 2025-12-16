@@ -678,7 +678,35 @@ function App() {
         searchInputRef.current?.focus();
         return;
       }
-      
+
+      // Left/Right arrow for expand/collapse in hierarchy view
+      if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && viewMode === 'hierarchy' && selectedIndices.size === 1) {
+        const selectedTocIndex = [...selectedIndices][0];
+        const selectedItem = displayFiles.find(f => f.tocIndex === selectedTocIndex);
+
+        if (selectedItem?.hasChildren) {
+          const isExpanded = expandedNodes.has(selectedTocIndex);
+
+          if (e.code === 'ArrowLeft' && isExpanded) {
+            e.preventDefault();
+            setExpandedNodes(prev => {
+              const next = new Set(prev);
+              next.delete(selectedTocIndex);
+              return next;
+            });
+            return;
+          } else if (e.code === 'ArrowRight' && !isExpanded) {
+            e.preventDefault();
+            setExpandedNodes(prev => {
+              const next = new Set(prev);
+              next.add(selectedTocIndex);
+              return next;
+            });
+            return;
+          }
+        }
+      }
+
       // Arrow key and page navigation
       const navKeys = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'];
       if (navKeys.includes(e.code) && lgp && displayFiles.length > 0) {
@@ -792,7 +820,7 @@ function App() {
     
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndices, effectivePreviewMode, openQuickLook, lgp, displayFiles, currentPath]);
+  }, [selectedIndices, effectivePreviewMode, openQuickLook, lgp, displayFiles, currentPath, viewMode, expandedNodes]);
 
   // Drag & drop handlers
   const handleDragEnter = useCallback((e) => {
@@ -910,6 +938,20 @@ function App() {
                 ))}
               </div>
               <div className="view-mode-toggle">
+                {viewMode === 'hierarchy' && hierarchyState.status === 'ready' && (
+                  <button
+                    className="expand-collapse-btn"
+                    onClick={() => {
+                      if (expandedNodes.size > 0) {
+                        setExpandedNodes(new Set());
+                      } else {
+                        setExpandedNodes(getAllParentIndices(hierarchyState.tree));
+                      }
+                    }}
+                  >
+                    {expandedNodes.size > 0 ? 'Collapse all' : 'Expand all'}
+                  </button>
+                )}
                 <button
                   className={`view-mode-btn ${viewMode === 'list' ? 'active' : ''}`}
                   onClick={() => setViewMode('list')}

@@ -119,6 +119,23 @@
   border-left-color: var(--accent);
 }
 
+.expand-collapse-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-right: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.expand-collapse-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 .empty-state {
   flex: 1;
   display: flex;
