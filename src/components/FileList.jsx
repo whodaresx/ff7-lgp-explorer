@@ -5,16 +5,22 @@ import './FileList.css';
 
 const ROW_HEIGHT = 32;
 
-export const FileList = forwardRef(function FileList({ 
-  files, 
+export const FileList = forwardRef(function FileList({
+  files,
   currentPath,
-  selectedIndices, 
-  onSelect, 
+  selectedIndices,
+  onSelect,
   onNavigate,
   onDoubleClick,
   sortColumn,
   sortDirection,
-  onSort
+  onSort,
+  viewMode = 'list',
+  onViewModeChange,
+  expandedNodes,
+  onToggleExpand,
+  hierarchyLoading = false,
+  hierarchyProgress = null,
 }, ref) {
   const parentRef = useRef(null);
   
@@ -25,8 +31,9 @@ export const FileList = forwardRef(function FileList({
     }
   }, [currentPath]);
   
-  const hasParent = currentPath !== '';
-  const displayItems = hasParent 
+  // In hierarchy view, don't show parent folder navigation
+  const hasParent = viewMode === 'list' && currentPath !== '';
+  const displayItems = hasParent
     ? [{ isParent: true }, ...files]
     : files;
 
@@ -75,6 +82,12 @@ export const FileList = forwardRef(function FileList({
     }
   }, [onDoubleClick]);
 
+  // Handle expand/collapse click
+  const handleExpandClick = useCallback((e, tocIndex) => {
+    e.stopPropagation();
+    onToggleExpand?.(tocIndex);
+  }, [onToggleExpand]);
+
   return (
     <div className="file-list-container">
       <div className="file-list-header">
@@ -92,6 +105,26 @@ export const FileList = forwardRef(function FileList({
         </span>
       </div>
       
+      {hierarchyLoading && viewMode === 'hierarchy' && (
+        <div className="hierarchy-loading">
+          <div className="hierarchy-loading-message">
+            {hierarchyProgress?.message || 'Building file hierarchy...'}
+          </div>
+          {hierarchyProgress && hierarchyProgress.total > 0 && (
+            <div className="hierarchy-progress">
+              <div className="hierarchy-progress-bar">
+                <div
+                  className="hierarchy-progress-fill"
+                  style={{ width: `${Math.round((hierarchyProgress.current / hierarchyProgress.total) * 100)}%` }}
+                />
+              </div>
+              <div className="hierarchy-progress-text">
+                {Math.round((hierarchyProgress.current / hierarchyProgress.total) * 100)}%
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div ref={parentRef} className="file-list-scroll">
         <div
           style={{
@@ -103,11 +136,15 @@ export const FileList = forwardRef(function FileList({
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const item = displayItems[virtualRow.index];
             const isSelected = !item.isParent && !item.isFolder && selectedIndices.has(item.tocIndex);
-            
+            const isHierarchyItem = viewMode === 'hierarchy' && typeof item.depth === 'number';
+            const depth = isHierarchyItem ? item.depth : 0;
+            const hasChildren = isHierarchyItem && item.hasChildren;
+            const isExpanded = hasChildren && expandedNodes?.has(item.tocIndex);
+
             return (
               <div
                 key={virtualRow.key}
-                className={`file-row ${isSelected ? 'selected' : ''} ${item.isParent || item.isFolder ? 'folder-row' : ''}`}
+                className={`file-row ${isSelected ? 'selected' : ''} ${item.isParent || item.isFolder ? 'folder-row' : ''} ${isHierarchyItem ? 'hierarchy-row' : ''}`}
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -136,7 +173,27 @@ export const FileList = forwardRef(function FileList({
                 ) : (
                   <>
                     <span className="col-index">{String(item.displayIndex).padStart(4, '0')}</span>
-                    <span className="col-name"><span className="file-icon">📄</span> {item.filename}</span>
+                    <span className="col-name">
+                      {isHierarchyItem && depth > 0 && (
+                        <span className="tree-indent" style={{ width: depth * 20 }}>
+                          └─
+                        </span>
+                      )}
+                      {hasChildren ? (
+                        <span
+                          className="expand-toggle"
+                          onClick={(e) => handleExpandClick(e, item.tocIndex)}
+                        >
+                          {isExpanded ? '▼' : '▶'}
+                        </span>
+                      ) : isHierarchyItem ? (
+                        <span className="expand-placeholder"></span>
+                      ) : null}
+                      <span className="file-icon">📄</span> {item.filename}
+                      {hasChildren && !isExpanded && (
+                        <span className="child-count">({item.childCount})</span>
+                      )}
+                    </span>
                     <span className="col-size">{formatFileSize(item.filesize)}</span>
                     <span className="col-type">{getFileType(item.filename)}</span>
                   </>

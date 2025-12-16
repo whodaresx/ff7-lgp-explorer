@@ -5,7 +5,7 @@ import { PModelPreview } from './PModelPreview.jsx';
 import { SkeletonPreview } from './SkeletonPreview.jsx';
 import { HRCPreview } from './HRCPreview.jsx';
 import { RSDPreview } from './RSDPreview.jsx';
-import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isHRCFile, isRSDFile } from '../utils/fileTypes.ts';
+import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isHRCFile, isRSDFile, isTextureFile } from '../utils/fileTypes.ts';
 import { usePersistedState } from '../utils/settings.ts';
 import './QuickLook.css';
 
@@ -29,7 +29,7 @@ const ExpandIcon = () => (
   </svg>
 );
 
-export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal', onDock, onUndock }) {
+export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal', onDock, onUndock, onFindReferences }) {
   const isTexFile = filename.toLowerCase().endsWith('.tex') || isBattleTexFile(filename);
   const isPFile = isPModelFile(filename);
   const isSkeletonFile = isBattleSkeletonFile(filename);
@@ -135,6 +135,18 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
             {isRSD && <span>Resource Definition</span>}
             {!isTexFile && !isPFile && !isSkeletonFile && !isHRC && !isRSD && <span>Hex View</span>}
           </>
+        )}
+        {isTextureFile(filename) && onFindReferences && (
+          <a
+            href="#"
+            className="quicklook-view-toggle"
+            onClick={(e) => {
+              e.preventDefault();
+              onFindReferences(filename);
+            }}
+          >
+            Find references
+          </a>
         )}
         {(isTexFile || isPFile || isSkeletonFile || isHRC || isRSD) && (
           <span style={{ marginLeft: 'auto' }}>

@@ -47,6 +47,26 @@ export function isRSDFile(filename: string): boolean {
   return filename.toLowerCase().endsWith('.rsd');
 }
 
+export function isTextureFile(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.tex') || isBattleTexFile(filename);
+}
+
+/**
+ * Parse an RSD file and extract texture references
+ * RSD files are text files with lines like: TEX[0]=filename.TIM
+ */
+export function parseRSDTextureRefs(content: string): string[] {
+  const textures: string[] = [];
+  const lines = content.split(/\r?\n/);
+  for (const line of lines) {
+    const match = line.match(/^TEX\[\d+\]=(.+)$/i);
+    if (match) {
+      textures.push(match[1].trim());
+    }
+  }
+  return textures;
+}
+
 export function isPModelFile(filename: string): boolean {
   const lower = filename.toLowerCase();
 

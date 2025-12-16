@@ -4,8 +4,9 @@ import { Toolbar } from './components/Toolbar.jsx';
 import { FileList } from './components/FileList.jsx';
 import { StatusBar } from './components/StatusBar.jsx';
 import { QuickLook } from './components/QuickLook.jsx';
-import { formatTotalSize, getFileType } from './utils/fileTypes.ts';
+import { formatTotalSize, getFileType, parseRSDTextureRefs } from './utils/fileTypes.ts';
 import { usePersistedState } from './utils/settings.ts';
+import { buildHierarchy, flattenHierarchy, getAllParentIndices, filterHierarchyBySearch } from './utils/hierarchy.ts';
 import {
   openFile,
   saveFile,
@@ -30,6 +31,15 @@ function App() {
   const [sortColumn, setSortColumn] = useState('index');
   const [sortDirection, setSortDirection] = useState('asc');
   const [previewLayout, setPreviewLayout] = usePersistedState('previewLayout');
+  const [viewMode, setViewMode] = usePersistedState('viewMode');
+  const [expandedNodes, setExpandedNodes] = useState(new Set());
+  const [hierarchyState, setHierarchyState] = useState({
+    status: 'idle', // 'idle' | 'building' | 'ready'
+    tree: null,
+    error: null,
+  });
+  const [hierarchyProgress, setHierarchyProgress] = useState(null);
+  const hierarchyBuildRef = useRef(null); // Track current build to prevent race conditions
   const lastSelectedIndex = useRef(null);
   const dragCounter = useRef(0);
 
@@ -38,6 +48,17 @@ function App() {
   const pendingSelectionIndex = useRef(null);
   const typeaheadBuffer = useRef('');
   const typeaheadTimeout = useRef(null);
+
+  // Track window width for responsive layout
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Force modal mode on narrow screens
+  const effectivePreviewMode = previewMode === 'docked' && windowWidth < 900 ? 'modal' : previewMode;
 
   // Build folder structure and file list from archive
   // archiveVersion is used to trigger re-computation when archive is modified
@@ -96,8 +117,76 @@ function App() {
     return { folders: folderMap, files: fileList, totalSize: total };
   }, [lgp, archiveVersion]);
 
+  // Build hierarchy when switching to hierarchy view
+  // Note: We separate the "start build" logic from the effect to avoid cleanup issues
+  const startHierarchyBuild = useCallback(() => {
+    if (!lgp || hierarchyBuildRef.current) return; // Already building
+
+    const buildId = Date.now();
+    hierarchyBuildRef.current = buildId;
+
+    setHierarchyState({ status: 'building', tree: null, error: null });
+    setHierarchyProgress(null);
+
+    const onProgress = (progress) => {
+      if (hierarchyBuildRef.current !== buildId) return;
+      setHierarchyProgress(progress);
+    };
+
+    buildHierarchy(lgp, onProgress).then(tree => {
+      if (hierarchyBuildRef.current !== buildId) return;
+      hierarchyBuildRef.current = null;
+      setHierarchyState({ status: 'ready', tree, error: null });
+      setHierarchyProgress(null);
+      setExpandedNodes(getAllParentIndices(tree));
+    }).catch(err => {
+      if (hierarchyBuildRef.current !== buildId) return;
+      hierarchyBuildRef.current = null;
+      setHierarchyState({ status: 'idle', tree: null, error: err.message });
+      setHierarchyProgress(null);
+    });
+  }, [lgp]);
+
+  // Trigger hierarchy build when switching to hierarchy view
+  useEffect(() => {
+    if (viewMode === 'hierarchy' && hierarchyState.status === 'idle' && lgp) {
+      startHierarchyBuild();
+    }
+  }, [viewMode, hierarchyState.status, lgp, startHierarchyBuild]);
+
+  // Reset hierarchy state when archive changes
+  const prevLgpRef = useRef(lgp);
+  useEffect(() => {
+    if (prevLgpRef.current !== lgp) {
+      prevLgpRef.current = lgp;
+      hierarchyBuildRef.current = null; // Cancel any in-progress build
+      setHierarchyState({ status: 'idle', tree: null, error: null });
+      setHierarchyProgress(null);
+      setExpandedNodes(new Set());
+    }
+  }, [lgp]);
+
+  // Flatten hierarchy based on expanded state
+  const hierarchyItems = useMemo(() => {
+    if (viewMode !== 'hierarchy' || !hierarchyState.tree) return null;
+    return flattenHierarchy(hierarchyState.tree, expandedNodes);
+  }, [viewMode, hierarchyState.tree, expandedNodes]);
+
   // Filter files based on current path and search query
   const displayFiles = useMemo(() => {
+    // Use hierarchy items when in hierarchy view
+    if (viewMode === 'hierarchy' && hierarchyItems) {
+      // Apply search filter (keeps parent nodes visible when children match)
+      if (searchQuery && hierarchyState.tree) {
+        const { items } = filterHierarchyBySearch(hierarchyItems, searchQuery, hierarchyState.tree);
+        return items;
+      }
+
+      // Return items as-is (hierarchy is already ordered by parent-child relationships)
+      return hierarchyItems;
+    }
+
+    // List view logic (existing)
     let filtered = files;
 
     // Filter by current path
@@ -123,7 +212,7 @@ function App() {
     // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(f => 
+      filtered = filtered.filter(f =>
         f.filename.toLowerCase().includes(query)
       );
       // Also filter folders by name when searching
@@ -136,7 +225,7 @@ function App() {
 
     // Sort folders first by name
     subfolders.sort((a, b) => a.name.localeCompare(b.name));
-    
+
     // Sort files
     const sortedFiles = [...filtered].sort((a, b) => {
       let cmp = 0;
@@ -163,9 +252,9 @@ function App() {
       }
       return sortDirection === 'asc' ? cmp : -cmp;
     });
-    
+
     return [...subfolders, ...sortedFiles];
-  }, [files, folders, currentPath, searchQuery, sortColumn, sortDirection]);
+  }, [files, folders, currentPath, searchQuery, sortColumn, sortDirection, viewMode, hierarchyItems, hierarchyState.tree]);
 
   const handleOpen = useCallback(async () => {
     const result = await openFile([{ name: 'LGP Archive', extensions: ['lgp'] }]);
@@ -179,11 +268,12 @@ function App() {
       setCurrentPath('');
       setSelectedIndices(new Set());
       setSearchQuery('');
+      setViewMode('list');
       setStatus(`Loaded ${result.name}`);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
-  }, []);
+  }, [setViewMode]);
 
   const handleSave = useCallback(async () => {
     if (!lgp) return;
@@ -418,6 +508,108 @@ function App() {
     setPreviewLayout(targetMode);
   }, [lgp, previewLayout, setPreviewLayout]);
 
+  // Find which .rsd files reference a given texture file
+  const handleFindReferences = useCallback((textureFilename) => {
+    if (!lgp) return;
+
+    // Get basename without extension for matching
+    // .rsd files often reference .TIM but actual files are .TEX
+    const lastDot = textureFilename.lastIndexOf('.');
+    const baseName = lastDot > 0 ? textureFilename.slice(0, lastDot) : textureFilename;
+    const baseNameLower = baseName.toLowerCase();
+
+    // Get all .rsd files from the archive
+    const rsdFiles = lgp.archive.toc.filter(entry =>
+      entry.filename.toLowerCase().endsWith('.rsd')
+    );
+
+    if (rsdFiles.length === 0) {
+      setStatus(`No .rsd files found in archive`);
+      return;
+    }
+
+    setStatus(`Searching ${rsdFiles.length} .rsd files...`);
+
+    // Search for references - use indexOf for fast initial filtering
+    const references = [];
+    const decoder = new TextDecoder('utf-8');
+
+    for (const entry of rsdFiles) {
+      const data = lgp.getFile(entry.filename);
+      if (!data) continue;
+
+      // Convert to text and do fast case-insensitive search
+      const text = decoder.decode(data);
+      if (!text.toLowerCase().includes(baseNameLower)) continue;
+
+      // Parse properly to confirm it's actually a TEX reference
+      const texRefs = parseRSDTextureRefs(text);
+      for (const ref of texRefs) {
+        const refLastDot = ref.lastIndexOf('.');
+        const refBase = refLastDot > 0 ? ref.slice(0, refLastDot) : ref;
+        if (refBase.toLowerCase() === baseNameLower) {
+          references.push(entry.filename);
+          break;
+        }
+      }
+    }
+
+    if (references.length === 0) {
+      setStatus(`No references found for ${textureFilename}`);
+    } else if (references.length === 1) {
+      setStatus({ message: 'Found reference:', references });
+    } else {
+      setStatus({ message: `Found ${references.length} references:`, references });
+    }
+  }, [lgp]);
+
+  // Keep a ref to current displayFiles for use in callbacks
+  const displayFilesRef = useRef(displayFiles);
+  useEffect(() => {
+    displayFilesRef.current = displayFiles;
+  }, [displayFiles]);
+
+  // Select a file by filename (used when clicking references in status bar)
+  const handleSelectFile = useCallback((filename) => {
+    if (!lgp) return;
+
+    // Find the file in the archive
+    const file = files.find(f => f.filename.toLowerCase() === filename.toLowerCase());
+    if (!file) {
+      setStatus(`File not found: ${filename}`);
+      return;
+    }
+
+    // Clear search query if it would filter out the file
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (!file.filename.toLowerCase().includes(query)) {
+        setSearchQuery('');
+      }
+    }
+
+    // Navigate to root if we're in a subfolder (rsd files are typically at root)
+    if (currentPath && !file.folderPath) {
+      setCurrentPath('');
+    } else if (file.folderPath && file.folderPath !== currentPath) {
+      setCurrentPath(file.folderPath);
+    }
+
+    // Select the file
+    setSelectedIndices(new Set([file.tocIndex]));
+    lastSelectedIndex.current = file.tocIndex;
+
+    // Scroll to file after state updates complete
+    const tocIndex = file.tocIndex;
+    setTimeout(() => {
+      const currentDisplayFiles = displayFilesRef.current;
+      const displayIndex = currentDisplayFiles.findIndex(f => f.tocIndex === tocIndex);
+      if (displayIndex >= 0 && fileListRef.current) {
+        fileListRef.current.scrollToIndex(displayIndex);
+      }
+    }, 100);
+  }, [lgp, files, searchQuery, currentPath]);
+
   const openQuickLook = useCallback(() => {
     if (!lgp || selectedIndices.size !== 1) return;
     
@@ -445,7 +637,7 @@ function App() {
 
   // Auto-update preview when selection changes in docked mode
   useEffect(() => {
-    if (previewMode !== 'docked' || !lgp) return;
+    if (effectivePreviewMode !== 'docked' || !lgp) return;
 
     // Get the last selected file
     if (selectedIndices.size === 0) return;
@@ -464,7 +656,7 @@ function App() {
         setQuickLookFile({ filename: file.filename, data });
       });
     }
-  }, [previewMode, selectedIndices, files, lgp, quickLookFile?.filename]);
+  }, [effectivePreviewMode, selectedIndices, files, lgp, quickLookFile?.filename]);
 
   // Keyboard handling for QuickLook and navigation
   useEffect(() => {
@@ -472,10 +664,10 @@ function App() {
       // Don't trigger if typing in an input
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       // Don't trigger any navigation if QuickLook modal is open
-      if (previewMode === 'modal') return;
+      if (effectivePreviewMode === 'modal') return;
 
       // Space opens preview when hidden, but not when docked (QuickLook handles it)
-      if (e.code === 'Space' && selectedIndices.size === 1 && previewMode === 'hidden') {
+      if (e.code === 'Space' && selectedIndices.size === 1 && effectivePreviewMode === 'hidden') {
         e.preventDefault();
         openQuickLook();
       }
@@ -600,7 +792,7 @@ function App() {
     
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndices, previewMode, openQuickLook, lgp, displayFiles, currentPath]);
+  }, [selectedIndices, effectivePreviewMode, openQuickLook, lgp, displayFiles, currentPath]);
 
   // Drag & drop handlers
   const handleDragEnter = useCallback((e) => {
@@ -650,11 +842,12 @@ function App() {
       setCurrentPath('');
       setSelectedIndices(new Set());
       setSearchQuery('');
+      setViewMode('list');
       setStatus(`Loaded ${file.name}`);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
-  }, []);
+  }, [setViewMode]);
 
   // Build breadcrumb
   const breadcrumbParts = currentPath ? currentPath.split('/').filter(Boolean) : [];
@@ -689,31 +882,53 @@ function App() {
         onSearchChange={handleSearchChange}
       />
       
-      <div className={`split-view ${previewMode === 'docked' ? 'split-view-active' : ''}`}>
+      <div className={`split-view ${effectivePreviewMode === 'docked' ? 'split-view-active' : ''}`}>
         <div className="main-content">
           {lgp && (
             <div className="breadcrumb">
-              <span
-                className="breadcrumb-item"
-                onClick={() => { setCurrentPath(''); setSelectedIndices(new Set()); }}
-              >
-                {archiveName}
-              </span>
-              {breadcrumbParts.map((part, i) => (
-                <span key={i}>
-                  <span className="breadcrumb-separator">/</span>
-                  <span
-                    className="breadcrumb-item"
-                    onClick={() => {
-                      const newPath = breadcrumbParts.slice(0, i + 1).join('/');
-                      setCurrentPath(newPath);
-                      setSelectedIndices(new Set());
-                    }}
-                  >
-                    {part}
-                  </span>
+              <div className="breadcrumb-path">
+                <span
+                  className="breadcrumb-item"
+                  onClick={() => { setCurrentPath(''); setSelectedIndices(new Set()); }}
+                >
+                  {archiveName}
                 </span>
-              ))}
+                {viewMode === 'list' && breadcrumbParts.map((part, i) => (
+                  <span key={i}>
+                    <span className="breadcrumb-separator">/</span>
+                    <span
+                      className="breadcrumb-item"
+                      onClick={() => {
+                        const newPath = breadcrumbParts.slice(0, i + 1).join('/');
+                        setCurrentPath(newPath);
+                        setSelectedIndices(new Set());
+                      }}
+                    >
+                      {part}
+                    </span>
+                  </span>
+                ))}
+              </div>
+              <div className="view-mode-toggle">
+                <button
+                  className={`view-mode-btn ${viewMode === 'list' ? 'active' : ''}`}
+                  onClick={() => setViewMode('list')}
+                  title="List view"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <path d="M1 3h12M1 7h12M1 11h12" />
+                  </svg>
+                </button>
+                <button
+                  className={`view-mode-btn ${viewMode === 'hierarchy' ? 'active' : ''}`}
+                  onClick={() => setViewMode('hierarchy')}
+                  title="Hierarchy view"
+                >
+                  <svg width="14" height="14" viewBox="-1 -1 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <path d="M1 2h5M4 2v4M4 6h4M4 6v4M4 10h4" />
+                  </svg>
+                </button>
+              </div>
             </div>
           )}
 
@@ -729,6 +944,22 @@ function App() {
               sortColumn={sortColumn}
               sortDirection={sortDirection}
               onSort={handleSort}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              expandedNodes={expandedNodes}
+              onToggleExpand={(tocIndex) => {
+                setExpandedNodes(prev => {
+                  const next = new Set(prev);
+                  if (next.has(tocIndex)) {
+                    next.delete(tocIndex);
+                  } else {
+                    next.add(tocIndex);
+                  }
+                  return next;
+                });
+              }}
+              hierarchyLoading={hierarchyState.status === 'building'}
+              hierarchyProgress={hierarchyProgress}
             />
           ) : (
             <div className="empty-state">
@@ -738,7 +969,7 @@ function App() {
           )}
         </div>
 
-        {previewMode === 'docked' && quickLookFile && (
+        {effectivePreviewMode === 'docked' && quickLookFile && (
           <QuickLook
             filename={quickLookFile.filename}
             data={quickLookFile.data}
@@ -746,6 +977,7 @@ function App() {
             onLoadFile={(name) => lgp?.getFile(name)}
             mode="docked"
             onUndock={undockPreview}
+            onFindReferences={handleFindReferences}
           />
         )}
       </div>
@@ -755,17 +987,19 @@ function App() {
         fileCount={lgp ? lgp.archive.toc.length : 0}
         totalSize={formatTotalSize(totalSize)}
         selectedCount={selectedIndices.size}
+        onSelectFile={handleSelectFile}
       />
       
       
-      {previewMode === 'modal' && quickLookFile && (
+      {effectivePreviewMode === 'modal' && quickLookFile && (
         <QuickLook
           filename={quickLookFile.filename}
           data={quickLookFile.data}
           onClose={closeQuickLook}
           onLoadFile={(name) => lgp?.getFile(name)}
           mode="modal"
-          onDock={dockPreview}
+          onDock={windowWidth >= 900 ? dockPreview : undefined}
+          onFindReferences={handleFindReferences}
         />
       )}
     </div>

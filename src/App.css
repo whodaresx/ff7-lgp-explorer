@@ -20,7 +20,8 @@
 }
 
 .split-view-active .main-content {
-  flex: 1;
+  flex: 3;
+  min-width: 450px;
   margin: 0;
 }
 
@@ -38,12 +39,18 @@
 .breadcrumb {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 11px 16px;
+  justify-content: space-between;
+  padding: 8px 16px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.breadcrumb-path {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .breadcrumb-item {
@@ -63,6 +70,53 @@
 .breadcrumb-separator {
   color: var(--text-primary);
   margin-right: 4px;
+}
+
+/* View mode toggle */
+.view-mode-toggle {
+  display: flex;
+}
+
+.view-mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  border-right: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.view-mode-btn svg {
+  display: block;
+}
+
+.view-mode-btn:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.view-mode-btn:last-child {
+  border-radius: 0 4px 4px 0;
+  border-right: 1px solid var(--border);
+}
+
+.view-mode-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.view-mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+.view-mode-btn.active + .view-mode-btn {
+  border-left-color: var(--accent);
 }
 
 .empty-state {

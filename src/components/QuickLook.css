@@ -159,7 +159,7 @@
 .quicklook-docked {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 7;
   min-width: 0;
   background: var(--bg-secondary);
   border: 1px solid var(--border);

@@ -32,28 +32,28 @@ export const Toolbar = forwardRef(function Toolbar({
   return (
     <div className="toolbar">
       <div className="toolbar-group">
-        <button onClick={onOpen}>
-          <Icon d={icons.open} /> Open LGP
+        <button onClick={onOpen} title="Open LGP">
+          <Icon d={icons.open} /> <span className="button-label">Open LGP</span>
         </button>
-        <button onClick={onSave} disabled={!hasArchive}>
-          <Icon d={icons.save} /> Save LGP
+        <button onClick={onSave} disabled={!hasArchive} title="Save LGP">
+          <Icon d={icons.save} /> <span className="button-label">Save LGP</span>
         </button>
       </div>
-      
+
       <div className="toolbar-separator" />
-      
+
       <div className="toolbar-group">
-        <button onClick={onExtract} disabled={!hasSelection}>
-          <Icon d={icons.extract} /> Extract
+        <button onClick={onExtract} disabled={!hasSelection} title="Extract">
+          <Icon d={icons.extract} /> <span className="button-label">Extract</span>
         </button>
-        <button onClick={onReplace} disabled={!hasSelection}>
-          <Icon d={icons.replace} /> Replace
+        <button onClick={onReplace} disabled={!hasSelection} title="Replace">
+          <Icon d={icons.replace} /> <span className="button-label">Replace</span>
         </button>
-        <button onClick={onAdd} disabled={!hasArchive}>
-          <Icon d={icons.add} /> Add
+        <button onClick={onAdd} disabled={!hasArchive} title="Add">
+          <Icon d={icons.add} /> <span className="button-label">Add</span>
         </button>
-        <button onClick={onRemove} disabled={!hasSelection}>
-          <Icon d={icons.remove} /> Remove
+        <button onClick={onRemove} disabled={!hasSelection} title="Remove">
+          <Icon d={icons.remove} /> <span className="button-label">Remove</span>
         </button>
       </div>
       

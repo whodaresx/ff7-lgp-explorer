@@ -10,6 +10,7 @@ export interface Settings {
   wireframe: boolean;
   vertexColors: boolean;
   smoothShading: boolean;
+  viewMode: 'list' | 'hierarchy';
 }
 
 const DEFAULTS: Settings = {
@@ -20,6 +21,7 @@ const DEFAULTS: Settings = {
   wireframe: false,
   vertexColors: true,
   smoothShading: true,
+  viewMode: 'list',
 };
 
 export function getSettings(): Settings {

@@ -102,3 +102,14 @@
   color: var(--text-secondary);
   letter-spacing: 0.5px;
 }
+
+/* Hide button labels on smaller screens */
+@media (max-width: 999px) {
+  .toolbar-group button .button-label {
+    display: none;
+  }
+
+  .toolbar-group button {
+    padding: 6px 8px;
+  }
+}

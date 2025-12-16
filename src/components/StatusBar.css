@@ -22,4 +22,122 @@
 
 .status-message {
   color: var(--text-primary);
+  display: inline;
+}
+
+.status-link {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.status-link:hover {
+  text-decoration: underline;
+}
+
+/* Update notification styles */
+.update-container {
+  position: relative;
+}
+
+.update-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: #eab308;
+  border-radius: 4px;
+}
+
+.update-trigger:hover {
+  background: rgba(234, 179, 8, 0.1);
+  color: #facc15;
+}
+
+.update-icon {
+  width: 14px;
+  height: 14px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.update-popover {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  width: 320px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  padding: 12px;
+}
+
+.update-popover-header {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.update-popover-date {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.update-popover-body {
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  margin-bottom: 12px;
+  padding-right: 4px;
+}
+
+.update-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.update-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.15s, opacity 0.15s;
+}
+
+.update-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.update-btn-dismiss {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.update-btn-dismiss:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.update-btn-install {
+  background: var(--accent);
+  color: white;
+}
+
+.update-btn-install:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
