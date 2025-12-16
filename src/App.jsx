@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import JSZip from 'jszip';
 import { LGP } from './lgp.ts';
 import { Toolbar } from './components/Toolbar.jsx';
 import { FileList } from './components/FileList.jsx';
@@ -7,6 +6,14 @@ import { StatusBar } from './components/StatusBar.jsx';
 import { QuickLook } from './components/QuickLook.jsx';
 import { formatTotalSize, getFileType } from './utils/fileTypes.ts';
 import { usePersistedState } from './utils/settings.ts';
+import {
+  openFile,
+  saveFile,
+  extractSingleFile,
+  extractMultipleFiles,
+  openFileForReplace,
+  openFilesForAdd,
+} from './utils/fileService.ts';
 import './App.css';
 
 function App() {
@@ -26,9 +33,6 @@ function App() {
   const lastSelectedIndex = useRef(null);
   const dragCounter = useRef(0);
 
-  const fileInputRef = useRef(null);
-  const replaceInputRef = useRef(null);
-  const insertInputRef = useRef(null);
   const fileListRef = useRef(null);
   const searchInputRef = useRef(null);
   const pendingSelectionIndex = useRef(null);
@@ -163,44 +167,39 @@ function App() {
     return [...subfolders, ...sortedFiles];
   }, [files, folders, currentPath, searchQuery, sortColumn, sortDirection]);
 
-  const handleOpen = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
+  const handleOpen = useCallback(async () => {
+    const result = await openFile([{ name: 'LGP Archive', extensions: ['lgp'] }]);
+    if (!result) return;
 
-  const handleFileSelect = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setStatus(`Loading ${file.name}...`);
+    setStatus(`Loading ${result.name}...`);
     try {
-      const buffer = await file.arrayBuffer();
-      const archive = new LGP(buffer);
+      const archive = new LGP(result.data);
       setLgp(archive);
-      setArchiveName(file.name);
+      setArchiveName(result.name);
       setCurrentPath('');
       setSelectedIndices(new Set());
       setSearchQuery('');
-      setStatus(`Loaded ${file.name}`);
+      setStatus(`Loaded ${result.name}`);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
-    e.target.value = '';
   }, []);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!lgp) return;
-    
+
     setStatus('Saving archive...');
     try {
       const data = lgp.writeArchive();
-      const blob = new Blob([data], { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = archiveName || 'archive.lgp';
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus('Archive saved');
+      const success = await saveFile(data, {
+        defaultName: archiveName || 'archive.lgp',
+        filters: [{ name: 'LGP Archive', extensions: ['lgp'] }],
+      });
+      if (success) {
+        setStatus('Archive saved');
+      } else {
+        setStatus('Save cancelled');
+      }
     } catch (err) {
       setStatus(`Error saving: ${err.message}`);
     }
@@ -210,7 +209,7 @@ function App() {
     if (!lgp || selectedIndices.size === 0) return;
 
     const selectedFiles = files.filter(f => selectedIndices.has(f.tocIndex));
-    
+
     if (selectedFiles.length === 1) {
       // Single file: download directly
       const file = selectedFiles[0];
@@ -219,84 +218,70 @@ function App() {
         setStatus(`Error: Could not read ${file.filename}`);
         return;
       }
-      
-      const blob = new Blob([data], { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus(`Extracted ${file.filename}`);
+
+      const success = await extractSingleFile(data, file.filename);
+      if (success) {
+        setStatus(`Extracted ${file.filename}`);
+      } else {
+        setStatus('Extraction cancelled');
+      }
     } else {
-      // Multiple files: create a zip
-      setStatus(`Creating zip with ${selectedFiles.length} files...`);
-      const zip = new JSZip();
-      
+      // Multiple files: use folder picker (Tauri) or zip (web)
+      setStatus(`Extracting ${selectedFiles.length} files...`);
+
+      const filesToExtract = [];
       for (const file of selectedFiles) {
         const data = lgp.getFile(file.filename);
         if (data) {
-          zip.file(file.filename, data);
+          filesToExtract.push({ filename: file.filename, data });
         }
       }
-      
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${archiveName.replace('.lgp', '')}_extract.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus(`Extracted ${selectedFiles.length} files as zip`);
+
+      const success = await extractMultipleFiles(filesToExtract, archiveName);
+      if (success) {
+        setStatus(`Extracted ${filesToExtract.length} files`);
+      } else {
+        setStatus('Extraction cancelled');
+      }
     }
   }, [lgp, files, selectedIndices, archiveName]);
 
-  const handleReplace = useCallback(() => {
+  const handleReplace = useCallback(async () => {
     if (selectedIndices.size !== 1) {
       setStatus('Select exactly one file to replace');
       return;
     }
-    replaceInputRef.current?.click();
-  }, [selectedIndices]);
-
-  const handleReplaceSelect = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !lgp) return;
+    if (!lgp) return;
 
     const selectedIndex = [...selectedIndices][0];
     const targetFile = files.find(f => f.tocIndex === selectedIndex);
     if (!targetFile) return;
 
+    const result = await openFileForReplace();
+    if (!result) return;
+
     try {
-      const buffer = await file.arrayBuffer();
-      const data = new Uint8Array(buffer);
-      lgp.setFile(targetFile.filename, data);
-      setStatus(`Replaced ${targetFile.filename} with ${file.name}`);
+      lgp.setFile(targetFile.filename, result.data);
+      setStatus(`Replaced ${targetFile.filename} with ${result.name}`);
       setArchiveVersion(v => v + 1);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
-    e.target.value = '';
   }, [lgp, files, selectedIndices]);
 
-  const handleAdd = useCallback(() => {
-    insertInputRef.current?.click();
-  }, []);
+  const handleAdd = useCallback(async () => {
+    if (!lgp) return;
 
-  const handleAddSelect = useCallback(async (e) => {
-    const inputFiles = e.target.files;
-    if (!inputFiles || inputFiles.length === 0 || !lgp) return;
+    const inputFiles = await openFilesForAdd();
+    if (!inputFiles || inputFiles.length === 0) return;
 
     setStatus(`Inserting ${inputFiles.length} file(s)...`);
     let inserted = 0;
     let skipped = 0;
-    
+
     for (const file of inputFiles) {
       try {
-        const buffer = await file.arrayBuffer();
-        const data = new Uint8Array(buffer);
-        
-        if (lgp.insertFile(file.name, data)) {
+        if (lgp.insertFile(file.name, file.data)) {
           inserted++;
         } else {
           skipped++;
@@ -305,11 +290,10 @@ function App() {
         console.error(`Error inserting ${file.name}:`, err);
       }
     }
-    
+
     const skippedMsg = skipped > 0 ? ` (${skipped} skipped - already exist)` : '';
     setStatus(`Inserted ${inserted} file(s)${skippedMsg}`);
     setArchiveVersion(v => v + 1);
-    e.target.value = '';
   }, [lgp]);
 
   const handleRemove = useCallback(() => {
@@ -773,26 +757,6 @@ function App() {
         selectedCount={selectedIndices.size}
       />
       
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".lgp"
-        style={{ display: 'none' }}
-        onChange={handleFileSelect}
-      />
-      <input
-        ref={replaceInputRef}
-        type="file"
-        style={{ display: 'none' }}
-        onChange={handleReplaceSelect}
-      />
-      <input
-        ref={insertInputRef}
-        type="file"
-        multiple
-        style={{ display: 'none' }}
-        onChange={handleAddSelect}
-      />
       
       {previewMode === 'modal' && quickLookFile && (
         <QuickLook

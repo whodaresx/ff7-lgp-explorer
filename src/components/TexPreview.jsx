@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import JSZip from 'jszip';
 import { TexFile } from '../texfile.ts';
 import { usePersistedState } from '../utils/settings.ts';
+import { extractSingleFile, extractMultipleFiles } from '../utils/fileService.ts';
+import { isTauri } from '../utils/platform.ts';
 import './TexPreview.css';
 
 const ZOOM_LEVELS = [10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
@@ -68,53 +69,69 @@ export function TexPreview({ data, filename }) {
   }, [tex, showAllPalettes]);
 
   const handleDownload = useCallback(async () => {
-    if (showAllPalettes) {
-      // Grid mode: create zip with all palettes
-      const baseName = filename.replace(/\.[^.]+$/, '');
-      const zip = new JSZip();
+    const baseName = filename.replace(/\.[^.]+$/, '');
 
-      // Collect all canvas blobs as promises
-      const blobPromises = [];
-      for (let i = 0; i < tex.data.numPalettes; i++) {
-        const canvas = canvasRefsArray.current[i];
-        if (!canvas) continue;
+    // Helper to convert canvas to Uint8Array
+    const canvasToUint8Array = (canvas) => {
+      return new Promise((resolve) => {
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const arrayBuffer = await blob.arrayBuffer();
+            resolve(new Uint8Array(arrayBuffer));
+          } else {
+            resolve(null);
+          }
+        }, 'image/png');
+      });
+    };
 
-        const promise = new Promise((resolve) => {
-          canvas.toBlob((blob) => {
-            if (blob) {
-              zip.file(`${baseName}_pal${i}.png`, blob);
-            }
-            resolve();
-          }, 'image/png');
-        });
-        blobPromises.push(promise);
-      }
+    if (showAllPalettes && tex.data.numPalettes > 1) {
+      // Grid mode: multiple palette files
+      if (isTauri()) {
+        // Tauri: use folder picker and save each file directly
+        const files = [];
+        for (let i = 0; i < tex.data.numPalettes; i++) {
+          const canvas = canvasRefsArray.current[i];
+          if (!canvas) continue;
 
-      // Wait for all blobs to be added to zip
-      await Promise.all(blobPromises);
+          const data = await canvasToUint8Array(canvas);
+          if (data) {
+            files.push({ filename: `${baseName}_pal${i}.png`, data });
+          }
+        }
+        await extractMultipleFiles(files, filename);
+      } else {
+        // Web: use JSZip
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
 
-      // Generate and download zip
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${baseName}_palettes.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } else {
-      // Single mode: existing logic
-      if (!canvasRef.current) return;
+        for (let i = 0; i < tex.data.numPalettes; i++) {
+          const canvas = canvasRefsArray.current[i];
+          if (!canvas) continue;
 
-      canvasRef.current.toBlob((blob) => {
-        const url = URL.createObjectURL(blob);
+          const data = await canvasToUint8Array(canvas);
+          if (data) {
+            zip.file(`${baseName}_pal${i}.png`, data);
+          }
+        }
+
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(zipBlob);
         const a = document.createElement('a');
         a.href = url;
-        const baseName = filename.replace(/\.[^.]+$/, '');
-        const paletteSuffix = tex?.data.numPalettes > 1 ? `_pal${paletteIndex}` : '';
-        a.download = `${baseName}${paletteSuffix}.png`;
+        a.download = `${baseName}_palettes.zip`;
         a.click();
         URL.revokeObjectURL(url);
-      }, 'image/png');
+      }
+    } else {
+      // Single mode: download one PNG
+      if (!canvasRef.current) return;
+
+      const data = await canvasToUint8Array(canvasRef.current);
+      if (!data) return;
+
+      const paletteSuffix = tex?.data.numPalettes > 1 ? `_pal${paletteIndex}` : '';
+      await extractSingleFile(data, `${baseName}${paletteSuffix}.png`, 'image/png');
     }
   }, [filename, paletteIndex, tex, showAllPalettes]);
 

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FF7 LGP Explorer",
+  "version": "1.0.0",
+  "identifier": "org.m4v3r.ff7-lgp-explorer",
+  "build": {
+    "beforeDevCommand": "pnpm dev:tauri",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build:tauri",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "FF7 LGP Explorer",
+        "theme": "Dark",
+        "width": 1100,
+        "height": 700,
+        "minWidth": 800,
+        "minHeight": 500
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "height": 400,
+          "width": 660
+        }
+      },
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "10.13"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM4QjlEMEM4Q0U1MkM0MjIKUldRaXhGTE95TkM1eUtNakxrRFpDQmpJYUlmV2ZCcDZLeWVPc0JYZHUvb2xYWDFPcUZaZnMvWmgK",
+      "endpoints": [
+        "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/latest/download/updater.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

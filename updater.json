@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "notes": "Initial release",
+  "pub_date": "2025-01-01T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "",
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.0/FF7.LGP.Explorer_1.0.0_x64-setup.exe"
+    },
+    "darwin-x86_64": {
+      "signature": "",
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.0/FF7.LGP.Explorer_1.0.0_x64.app.tar.gz"
+    },
+    "darwin-aarch64": {
+      "signature": "",
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.0/FF7.LGP.Explorer_1.0.0_aarch64.app.tar.gz"
+    },
+    "linux-x86_64": {
+      "signature": "",
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.0/ff7-lgp-explorer_1.0.0_amd64.AppImage.tar.gz"
+    }
+  }
+}
