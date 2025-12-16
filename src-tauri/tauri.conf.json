@@ -56,7 +56,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM4QjlEMEM4Q0U1MkM0MjIKUldRaXhGTE95TkM1eUtNakxrRFpDQmpJYUlmV2ZCcDZLeWVPc0JYZHUvb2xYWDFPcUZaZnMvWmgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGRUJCM0Q1RjAyQUMwRUMKUldUc3dDcncxYlBydjJSTXBzTHByRW05SU9QZEFtSHkzN2kzL1RNc2toQk5oNUMzUmFBckczWmcK",
       "endpoints": [
         "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/latest/download/updater.json"
       ],
