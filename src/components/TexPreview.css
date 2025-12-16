@@ -166,3 +166,67 @@
 .tex-error {
   color: #f87171;
 }
+
+/* Show All button styling */
+.tex-show-all-btn {
+  margin-left: 8px;
+  border-radius: 4px;
+  min-width: 70px;
+}
+
+/* Grid container - scrollable wrapper */
+.tex-grid-container {
+  flex: 1;
+  overflow: auto;
+  background: repeating-conic-gradient(
+    var(--bg-tertiary) 0% 25%,
+    var(--bg-secondary) 0% 50%
+  ) 50% / 20px 20px;
+}
+
+/* Grid layout using flexbox with wrap */
+.tex-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+  align-content: flex-start;
+  min-height: 100%;
+}
+
+/* Individual grid cell */
+.tex-grid-cell {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+/* Canvas wrapper inside cell */
+.tex-grid-canvas-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: repeating-conic-gradient(
+    var(--bg-tertiary) 0% 25%,
+    var(--bg-primary) 0% 50%
+  ) 50% / 16px 16px;
+  overflow: auto;
+}
+
+/* Grid cell footer label */
+.tex-grid-cell-footer {
+  padding: 6px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  opacity: 0.95;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}

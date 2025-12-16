@@ -4,9 +4,18 @@ import './HexViewer.css';
 
 const COLUMN_OPTIONS = [16, 24, 32];
 const VIEW_TYPES = ['Hex', 'Plaintext'];
+const WIDTH_OPTIONS = ['Normal', 'Full'];
 
-export function HexViewer({ data, columns, onColumnsChange }) {
+export function HexViewer({ data, columns, onColumnsChange, onPlaintextWidthChange, mode = 'modal' }) {
   const parentRef = useRef(null);
+  const [plaintextWidth, setPlaintextWidth] = useState('Normal');
+
+  const handlePlaintextWidthChange = (width) => {
+    setPlaintextWidth(width);
+    if (onPlaintextWidthChange) {
+      onPlaintextWidthChange(width);
+    }
+  };
 
   // Auto-detect if content is likely plaintext by checking first 100 bytes
   const isLikelyText = useMemo(() => {
@@ -139,6 +148,22 @@ export function HexViewer({ data, columns, onColumnsChange }) {
             </div>
           </>
         )}
+        {viewType === 'Plaintext' && mode === 'modal' && (
+          <>
+            <span className="hex-toolbar-label">Width:</span>
+            <div className="hex-segmented">
+              {WIDTH_OPTIONS.map(width => (
+                <button
+                  key={width}
+                  className={`hex-segment ${plaintextWidth === width ? 'active' : ''}`}
+                  onClick={() => handlePlaintextWidthChange(width)}
+                >
+                  {width}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
       
       {viewType === 'Hex' ? (
@@ -187,7 +212,9 @@ export function HexViewer({ data, columns, onColumnsChange }) {
         </>
       ) : (
         <div className="plaintext-scroll">
-          <pre className="plaintext-content">{plaintextContent}</pre>
+          <pre className="plaintext-content">
+            {plaintextContent}
+          </pre>
         </div>
       )}
     </div>

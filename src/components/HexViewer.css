@@ -18,6 +18,11 @@
 .hex-toolbar-label {
   color: var(--text-secondary);
   font-size: 12px;
+  margin-left: 8px;
+}
+
+.hex-toolbar-label:first-child {
+  margin-left: 0px;
 }
 
 .hex-segmented {

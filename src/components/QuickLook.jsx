@@ -9,9 +9,9 @@ import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, is
 import './QuickLook.css';
 
 const HEX_COLUMN_WIDTHS = {
-  16: 660,
-  24: 920,
-  32: 1180,
+  16: 676,
+  24: 928,
+  32: 1190,
 };
 
 // SVG Icons
@@ -35,6 +35,24 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
   const isHRC = isHRCFile(filename);
   const isRSD = isRSDFile(filename);
   const [hexColumns, setHexColumns] = useState(16);
+  const [viewMode, setViewMode] = useState('auto'); // 'auto' | 'hex'
+  const [plaintextWidth, setPlaintextWidth] = useState('Normal'); // 'Normal' | 'Full'
+
+  // Check if showing a specialized preview (not hex mode)
+  const isSpecializedPreview = viewMode !== 'hex' && (isTexFile || isPFile || isSkeletonFile || isHRC || isRSD);
+  // Check if showing hex view
+  const isHexView = !isSpecializedPreview;
+  // Check if plaintext is in full width mode
+  const isPlaintextFullWidth = isHexView && plaintextWidth === 'Full';
+
+  const getFileTypeName = () => {
+    if (isTexFile) return 'TEX Image';
+    if (isPFile) return '3D Model';
+    if (isSkeletonFile) return 'Battle Skeleton';
+    if (isHRC) return 'Field Skeleton';
+    if (isRSD) return 'Resource Definition';
+    return 'Preview';
+  };
 
   const modalWidth = useMemo(() => {
     if (isTexFile) return 900;
@@ -64,6 +82,12 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  useEffect(() => {
+    // Reset view mode when file changes
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setViewMode('auto');
+  }, [filename, data]);
+
   const content = (
     <>
       <div className="quicklook-header">
@@ -79,14 +103,16 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
               <ExpandIcon />
             </button>
           )}
-          <button className="quicklook-button" onClick={onClose} title="Close (Esc)">
+          <button className="quicklook-button quicklook-close-button" onClick={onClose} title="Close (Esc)">
             ×
           </button>
         </div>
       </div>
 
       <div className="quicklook-content">
-        {isTexFile ? (
+        {viewMode === 'hex' ? (
+          <HexViewer data={data} columns={hexColumns} onColumnsChange={setHexColumns} onPlaintextWidthChange={setPlaintextWidth} mode={mode} />
+        ) : isTexFile ? (
           <TexPreview data={data} filename={filename} />
         ) : isPFile ? (
           <PModelPreview data={data} />
@@ -97,18 +123,51 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
         ) : isRSD ? (
           <RSDPreview data={data} onLoadFile={onLoadFile} />
         ) : (
-          <HexViewer data={data} columns={hexColumns} onColumnsChange={setHexColumns} />
+          <HexViewer data={data} columns={hexColumns} onColumnsChange={setHexColumns} onPlaintextWidthChange={setPlaintextWidth} mode={mode} />
         )}
       </div>
 
       <div className="quicklook-footer">
         <span>{formatFileSize(data.length)}</span>
-        {isTexFile && <span>TEX Image</span>}
-        {isPFile && <span>3D Model</span>}
-        {isSkeletonFile && <span>Battle Skeleton</span>}
-        {isHRC && <span>Field Skeleton</span>}
-        {isRSD && <span>Resource Definition</span>}
-        {!isTexFile && !isPFile && !isSkeletonFile && !isHRC && !isRSD && <span>Hex View</span>}
+        {viewMode === 'hex' ? (
+          <span>Hex View</span>
+        ) : (
+          <>
+            {isTexFile && <span>TEX Image</span>}
+            {isPFile && <span>3D Model</span>}
+            {isSkeletonFile && <span>Battle Skeleton</span>}
+            {isHRC && <span>Field Skeleton</span>}
+            {isRSD && <span>Resource Definition</span>}
+            {!isTexFile && !isPFile && !isSkeletonFile && !isHRC && !isRSD && <span>Hex View</span>}
+          </>
+        )}
+        {(isTexFile || isPFile || isSkeletonFile || isHRC || isRSD) && (
+          <span style={{ marginLeft: 'auto' }}>
+            {viewMode === 'hex' ? (
+              <a
+                href="#"
+                className="quicklook-view-toggle"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setViewMode('auto');
+                }}
+              >
+                View as {getFileTypeName()}
+              </a>
+            ) : (
+              <a
+                href="#"
+                className="quicklook-view-toggle"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setViewMode('hex');
+                }}
+              >
+                View as Hex/Text
+              </a>
+            )}
+          </span>
+        )}
       </div>
     </>
   );
@@ -123,7 +182,10 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
 
   return (
     <div className="quicklook-overlay" onClick={handleOverlayClick}>
-      <div className="quicklook-modal" style={{ maxWidth: modalWidth }}>
+      <div
+        className={`quicklook-modal ${isSpecializedPreview || isPlaintextFullWidth ? 'quicklook-modal-fullscreen' : ''} ${isHexView && !isPlaintextFullWidth ? 'quicklook-modal-fullscreen-height' : ''}`}
+        style={isSpecializedPreview || isPlaintextFullWidth ? {} : { maxWidth: modalWidth }}
+      >
         {content}
       </div>
     </div>
