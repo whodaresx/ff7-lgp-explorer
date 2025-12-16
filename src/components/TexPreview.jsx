@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { TexFile } from '../texfile.ts';
 import './TexPreview.css';
 
-const ZOOM_LEVELS = [10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400];
+const ZOOM_LEVELS = [10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
 
 export function TexPreview({ data, filename }) {
   const [paletteIndex, setPaletteIndex] = useState(0);
