@@ -39,7 +39,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 11px 16px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
   font-size: 13px;
@@ -50,6 +50,10 @@
   cursor: pointer;
   color: var(--accent);
   font-weight: 600;
+}
+
+.breadcrumb-item:first-child {
+  color: var(--text-primary);
 }
 
 .breadcrumb-item:hover {

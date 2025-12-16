@@ -54,18 +54,47 @@ export class HRCFile {
         if (!bonesLine.startsWith(':BONES')) {
             throw new Error('Invalid HRC file: missing BONES');
         }
-        const boneCount = parseInt(bonesLine.split(/\s+/)[1], 10);
+        const headerBoneCount = parseInt(bonesLine.split(/\s+/)[1], 10);
 
         // Parse bones
         const bones: HRCBone[] = [];
-        for (let i = 0; i < boneCount; i++) {
+
+        // Some HRC files (e.g., hkbb.hrc) have `:BONES 0` but still contain a root bone
+        // Try to parse bone data even if header says 0, and continue until we can't read valid data
+        let bonesParsed = 0;
+        while (lineIndex < lines.length) {
+            // Save position in case we need to backtrack
+            const savedIndex = lineIndex;
+
+            // Try to read bone data
             const name = nextLine();
+            if (!name) break; // No more data
+
             const parentName = nextLine();
-            const length = parseFloat(nextLine());
+            if (!parentName) {
+                lineIndex = savedIndex; // Backtrack
+                break;
+            }
+
+            const lengthStr = nextLine();
+            const length = parseFloat(lengthStr);
+            if (isNaN(length)) {
+                lineIndex = savedIndex; // Backtrack
+                break;
+            }
+
             const resourceLine = nextLine();
+            if (!resourceLine) {
+                lineIndex = savedIndex; // Backtrack
+                break;
+            }
 
             const resourceParts = resourceLine.split(/\s+/).filter(p => p.length > 0);
-            const resourceCount = parseInt(resourceParts[0], 10) || 0;
+            const resourceCount = parseInt(resourceParts[0], 10);
+            if (isNaN(resourceCount)) {
+                lineIndex = savedIndex; // Backtrack
+                break;
+            }
             const resources = resourceParts.slice(1);
 
             bones.push({
@@ -75,12 +104,20 @@ export class HRCFile {
                 resourceCount,
                 resources,
             });
+
+            bonesParsed++;
+
+            // If header specified a count, respect it as a limit (but allow reading more if available)
+            // Stop after parsing expected count unless header said 0 (which we treat as "read what's there")
+            if (headerBoneCount > 0 && bonesParsed >= headerBoneCount) {
+                break;
+            }
         }
 
         return {
             headerBlock,
             skeletonName,
-            boneCount,
+            boneCount: bones.length, // Use actual parsed count, not header count
             bones,
         };
     }

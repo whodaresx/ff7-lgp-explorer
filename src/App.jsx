@@ -6,6 +6,7 @@ import { FileList } from './components/FileList.jsx';
 import { StatusBar } from './components/StatusBar.jsx';
 import { QuickLook } from './components/QuickLook.jsx';
 import { formatTotalSize, getFileType } from './utils/fileTypes.ts';
+import { usePersistedState } from './utils/settings.ts';
 import './App.css';
 
 function App() {
@@ -21,9 +22,9 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [sortColumn, setSortColumn] = useState('index');
   const [sortDirection, setSortDirection] = useState('asc');
+  const [previewLayout, setPreviewLayout] = usePersistedState('previewLayout');
   const lastSelectedIndex = useRef(null);
   const dragCounter = useRef(0);
-  const lastUsedPreviewMode = useRef('modal');
 
   const fileInputRef = useRef(null);
   const replaceInputRef = useRef(null);
@@ -427,11 +428,11 @@ function App() {
       return;
     }
 
-    const targetMode = mode || lastUsedPreviewMode.current;
+    const targetMode = mode || previewLayout;
     setQuickLookFile({ filename: file.filename, data });
     setPreviewMode(targetMode);
-    lastUsedPreviewMode.current = targetMode;
-  }, [lgp]);
+    setPreviewLayout(targetMode);
+  }, [lgp, previewLayout, setPreviewLayout]);
 
   const openQuickLook = useCallback(() => {
     if (!lgp || selectedIndices.size !== 1) return;
@@ -450,13 +451,13 @@ function App() {
 
   const dockPreview = useCallback(() => {
     setPreviewMode('docked');
-    lastUsedPreviewMode.current = 'docked';
-  }, []);
+    setPreviewLayout('docked');
+  }, [setPreviewLayout]);
 
   const undockPreview = useCallback(() => {
     setPreviewMode('modal');
-    lastUsedPreviewMode.current = 'modal';
-  }, []);
+    setPreviewLayout('modal');
+  }, [setPreviewLayout]);
 
   // Auto-update preview when selection changes in docked mode
   useEffect(() => {

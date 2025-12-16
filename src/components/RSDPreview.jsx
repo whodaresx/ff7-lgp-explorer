@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils';
 import { RSDFile } from '../rsdfile.ts';
 import { PFile } from '../pfile.ts';
 import { TexFile } from '../texfile.ts';
+import { usePersistedState } from '../utils/settings.ts';
 import './RSDPreview.css';
 
 export function RSDPreview({ data, onLoadFile }) {
@@ -12,9 +13,9 @@ export function RSDPreview({ data, onLoadFile }) {
     const sceneRef = useRef(null);
     const meshRef = useRef(null);
 
-    const [wireframe, setWireframe] = useState(false);
-    const [showVertexColors, setShowVertexColors] = useState(true);
-    const [useSmoothShading, setUseSmoothShading] = useState(true);
+    const [wireframe, setWireframe] = usePersistedState('wireframe');
+    const [vertexColors, setVertexColors] = usePersistedState('vertexColors');
+    const [smoothShading, setSmoothShading] = usePersistedState('smoothShading');
 
     // Parse the RSD file and load referenced P model and textures
     const { pfile, textures, stats, error } = useMemo(() => {
@@ -88,7 +89,7 @@ export function RSDPreview({ data, onLoadFile }) {
 
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a2e);
+        scene.background = new THREE.Color(0x000000);
         sceneRef.current = scene;
 
         // Camera
@@ -116,7 +117,7 @@ export function RSDPreview({ data, onLoadFile }) {
         scene.add(directionalLight);
 
         // Create mesh from P file with textures
-        const mesh = createMeshFromPFile(pfile, textures, showVertexColors, useSmoothShading);
+        const mesh = createMeshFromPFile(pfile, textures, vertexColors, smoothShading);
         meshRef.current = mesh;
         scene.add(mesh);
 
@@ -155,7 +156,7 @@ export function RSDPreview({ data, onLoadFile }) {
                 container.removeChild(renderer.domElement);
             }
         };
-    }, [pfile, textures, showVertexColors, useSmoothShading]);
+    }, [pfile, textures, vertexColors, smoothShading]);
 
     // Update wireframe
     useEffect(() => {
@@ -192,16 +193,16 @@ export function RSDPreview({ data, onLoadFile }) {
                 <label className="rsd-toggle">
                     <input
                         type="checkbox"
-                        checked={showVertexColors}
-                        onChange={(e) => setShowVertexColors(e.target.checked)}
+                        checked={vertexColors}
+                        onChange={(e) => setVertexColors(e.target.checked)}
                     />
                     Vertex Colors
                 </label>
                 <label className="rsd-toggle">
                     <input
                         type="checkbox"
-                        checked={useSmoothShading}
-                        onChange={(e) => setUseSmoothShading(e.target.checked)}
+                        checked={smoothShading}
+                        onChange={(e) => setSmoothShading(e.target.checked)}
                     />
                     Smooth Shading
                 </label>

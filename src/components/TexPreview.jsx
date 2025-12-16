@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import JSZip from 'jszip';
 import { TexFile } from '../texfile.ts';
+import { usePersistedState } from '../utils/settings.ts';
 import './TexPreview.css';
 
 const ZOOM_LEVELS = [10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
@@ -9,7 +10,7 @@ export function TexPreview({ data, filename }) {
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [zoom, setZoom] = useState(100);
   const [paletteDropdownOpen, setPaletteDropdownOpen] = useState(false);
-  const [showAllPalettes, setShowAllPalettes] = useState(false);
+  const [showAllPalettes, setShowAllPalettes] = usePersistedState('showAllPalettes');
   const canvasRef = useRef(null);
   const canvasRefsArray = useRef([]);
   const paletteDropdownRef = useRef(null);

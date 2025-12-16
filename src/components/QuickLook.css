@@ -169,6 +169,7 @@
 
 .quicklook-docked .quicklook-header {
   flex-shrink: 0;
+  padding: 6px 16px;
 }
 
 .quicklook-docked .quicklook-content {

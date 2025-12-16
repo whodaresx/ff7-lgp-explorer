@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils';
 import { PFile } from '../pfile.ts';
+import { usePersistedState } from '../utils/settings.ts';
 import './PModelPreview.css';
 
 export function PModelPreview({ data }) {
@@ -10,9 +11,9 @@ export function PModelPreview({ data }) {
     const sceneRef = useRef(null);
     const meshRef = useRef(null);
 
-    const [wireframe, setWireframe] = useState(false);
-    const [showVertexColors, setShowVertexColors] = useState(true);
-    const [useRetroShading, setUseRetroShading] = useState(true);
+    const [wireframe, setWireframe] = usePersistedState('wireframe');
+    const [vertexColors, setVertexColors] = usePersistedState('vertexColors');
+    const [smoothShading, setSmoothShading] = usePersistedState('smoothShading');
 
     // Parse the P file and compute stats
     const { pfile, stats, error } = useMemo(() => {
@@ -34,7 +35,7 @@ export function PModelPreview({ data }) {
 
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a2e);
+        scene.background = new THREE.Color(0x000000);
         sceneRef.current = scene;
 
         // Camera
@@ -54,15 +55,15 @@ export function PModelPreview({ data }) {
         controls.panSpeed = 0.8;
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, useRetroShading ? 0.4 : 0.6);
+        const ambientLight = new THREE.AmbientLight(0xffffff, smoothShading ? 0.4 : 0.6);
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, useRetroShading ? 0.8 : 0.8);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, smoothShading ? 0.8 : 0.8);
         directionalLight.position.set(1, 1, 1);
         scene.add(directionalLight);
 
         // Create mesh from P file
-        const mesh = createMeshFromPFile(pfile, showVertexColors, useRetroShading);
+        const mesh = createMeshFromPFile(pfile, vertexColors, smoothShading);
         meshRef.current = mesh;
         scene.add(mesh);
 
@@ -97,7 +98,7 @@ export function PModelPreview({ data }) {
                 container.removeChild(renderer.domElement);
             }
         };
-    }, [pfile, showVertexColors, useRetroShading]);
+    }, [pfile, vertexColors, smoothShading]);
 
     // Update wireframe
     useEffect(() => {
@@ -130,16 +131,16 @@ export function PModelPreview({ data }) {
                 <label className="pmodel-toggle">
                     <input
                         type="checkbox"
-                        checked={showVertexColors}
-                        onChange={(e) => setShowVertexColors(e.target.checked)}
+                        checked={vertexColors}
+                        onChange={(e) => setVertexColors(e.target.checked)}
                     />
                     Vertex Colors
                 </label>
                 <label className="pmodel-toggle">
                     <input
                         type="checkbox"
-                        checked={useRetroShading}
-                        onChange={(e) => setUseRetroShading(e.target.checked)}
+                        checked={smoothShading}
+                        onChange={(e) => setSmoothShading(e.target.checked)}
                     />
                     Smooth Shading
                 </label>

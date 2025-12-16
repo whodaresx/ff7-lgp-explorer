@@ -6,6 +6,7 @@ import { SkeletonPreview } from './SkeletonPreview.jsx';
 import { HRCPreview } from './HRCPreview.jsx';
 import { RSDPreview } from './RSDPreview.jsx';
 import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isHRCFile, isRSDFile } from '../utils/fileTypes.ts';
+import { usePersistedState } from '../utils/settings.ts';
 import './QuickLook.css';
 
 const HEX_COLUMN_WIDTHS = {
@@ -34,8 +35,8 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
   const isSkeletonFile = isBattleSkeletonFile(filename);
   const isHRC = isHRCFile(filename);
   const isRSD = isRSDFile(filename);
-  const [hexColumns, setHexColumns] = useState(16);
-  const [viewMode, setViewMode] = useState('auto'); // 'auto' | 'hex'
+  const [hexColumns, setHexColumns] = usePersistedState('hexColumns');
+  const [viewMode, setViewMode] = usePersistedState('previewMode');
   const [plaintextWidth, setPlaintextWidth] = useState('Normal'); // 'Normal' | 'Full'
 
   // Check if showing a specialized preview (not hex mode)
@@ -81,12 +82,6 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
-
-  useEffect(() => {
-    // Reset view mode when file changes
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setViewMode('auto');
-  }, [filename, data]);
 
   const content = (
     <>

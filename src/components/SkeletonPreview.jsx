@@ -235,7 +235,7 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
 
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a2e);
+        scene.background = new THREE.Color(0x000000);
 
         // Camera
         const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100000);
