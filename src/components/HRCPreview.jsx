@@ -7,6 +7,7 @@ import { PFile } from '../pfile.ts';
 import { FieldAnimation } from '../animfile.ts';
 import { TexFile } from '../texfile.ts';
 import { createMeshFromPFile, fitCameraToObject } from '../utils/pfileRenderer.js';
+import modelAnimations from '../assets/model-animations.json';
 import './SkeletonPreview.css';
 
 export function HRCPreview({ data, filename, onLoadFile }) {
@@ -84,33 +85,34 @@ export function HRCPreview({ data, filename, onLoadFile }) {
         const allMeshes = [];
         let cancelled = false;
 
-        // Try to find and load animation file
+        // Try to find and load animation file using model-animations.json mapping
         const findAnimation = () => {
+            console.log("Finding animation for", filename);
             if (!onLoadFile) return null;
 
-            // Get the skeleton name prefix (e.g., "aaaa" from "aaaa.hrc")
-            const prefix = filename.toLowerCase().replace('.hrc', '').slice(0, 2);
+            // Get the model code (e.g., "aaaa" from "aaaa.hrc")
+            const modelCode = filename.toLowerCase().replace('.hrc', '');
+            const animList = modelAnimations[modelCode];
 
-            // FF7 field animations use 4-letter names like aafe.a, aaff.a, etc.
-            // They're in the same archive and share the first 2 letters with the skeleton
-            // Try all possible combinations for the last 2 characters
-            const chars = 'abcdefghijklmnopqrstuvwxyz';
+            if (!animList || animList.length === 0) return null;
 
-            for (const c1 of chars) {
-                for (const c2 of chars) {
-                    const animFilename = `${prefix}${c1}${c2}.a`;
-                    const animData = onLoadFile(animFilename);
-                    if (animData) {
-                        try {
-                            const anim = new FieldAnimation(animData);
-                            // Check if bone count matches (or special case for single bone)
-                            if (anim.data.nBones === hrc.data.bones.length ||
-                                (hrc.data.bones.length === 1 && anim.data.nBones === 0)) {
-                                return anim;
-                            }
-                        } catch {
-                            // Not a valid animation file, continue searching
+            // Try animations from the list in order
+            for (const animCode of animList) {
+                const animFilename = `${animCode}.a`;
+                const animData = onLoadFile(animFilename);
+                console.log("Trying animation", animFilename);
+                if (animData) {
+                    try {
+                        const anim = new FieldAnimation(animData);
+                        // Check if bone count matches (or special case for single bone)
+                        if (anim.data.nBones === hrc.data.bones.length ||
+                            (hrc.data.bones.length === 1 && anim.data.nBones === 0)) {
+                            console.log("Found animation", animFilename);
+                            return anim;
                         }
+                    } catch {
+                        // Not a valid animation file, continue searching
+                        console.log("Not a valid animation file", animFilename);
                     }
                 }
             }

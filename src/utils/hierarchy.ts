@@ -3,7 +3,20 @@ import { HRCFile } from '../hrcfile';
 import { RSDFile } from '../rsdfile';
 import { SkeletonFile } from '../skeleton';
 import { isBattleSkeletonFile } from './fileTypes';
+import modelAnimations from '../assets/model-animations.json';
+import charNames from '../assets/char-names.json';
+import battleNames from '../assets/battle-names.json';
 import type { LGP } from '../lgp';
+
+// Get display name for a file based on archive type
+function getDisplayName(filename: string, archiveType: string | null): string | null {
+  if (!archiveType) return null;
+  const baseName = filename.toLowerCase().replace(/\.[^.]+$/, '');
+  if (baseName.length !== 4) return null;
+  if (archiveType === 'char') return (charNames as Record<string, string>)[baseName] || null;
+  if (archiveType === 'battle') return (battleNames as Record<string, string>)[baseName] || null;
+  return null;
+}
 
 export interface HierarchyNode {
   filename: string;
@@ -164,9 +177,10 @@ export async function buildFieldHierarchy(lgp: LGP, onProgress?: ProgressCallbac
     rsdToChildren.set(filename, children);
   }
 
-  // Step 4: Build HRC nodes with RSD children
+  // Step 4: Build HRC nodes with RSD children and animation files
   const hrcNodes: HierarchyNode[] = [];
   const rsdReferencedByHRC = new Set<string>();
+  const animReferencedByHRC = new Set<string>();
 
   for (const [filename, { hrc, entry }] of parsedHRCs) {
     referenced.add(filename);
@@ -194,6 +208,26 @@ export async function buildFieldHierarchy(lgp: LGP, onProgress?: ProgressCallbac
             tocIndex: rsdEntry.tocIndex,
             filesize: rsdEntry.filesize,
             children: rsdChildren.map(c => ({ ...c, children: [] })),
+          });
+        }
+      }
+    }
+
+    // Get animation files from model-animations.json
+    const modelCode = filename.replace('.hrc', '');
+    const animList = (modelAnimations as Record<string, string[]>)[modelCode];
+    if (animList) {
+      for (const animCode of animList) {
+        const animFilename = `${animCode}.a`;
+        const animEntry = fileMap.get(animFilename);
+        if (animEntry) {
+          animReferencedByHRC.add(animFilename);
+          referenced.add(animFilename);
+          node.children.push({
+            filename: animEntry.filename,
+            tocIndex: animEntry.tocIndex,
+            filesize: animEntry.filesize,
+            children: [],
           });
         }
       }
@@ -386,7 +420,8 @@ export function getAllParentIndices(nodes: HierarchyNode[]): Set<number> {
 export function filterHierarchyBySearch(
   items: FlatHierarchyItem[],
   query: string,
-  nodes: HierarchyNode[]
+  nodes: HierarchyNode[],
+  archiveType: string | null = null
 ): { items: FlatHierarchyItem[]; expandedNodes: Set<number> } {
   const queryLower = query.toLowerCase();
   const matchingIndices = new Set<number>();
@@ -397,7 +432,13 @@ export function filterHierarchyBySearch(
     for (const node of nodes) {
       const currentAncestors = [...ancestors];
 
-      if (node.filename.toLowerCase().includes(queryLower)) {
+      // Check filename match
+      const matchesFilename = node.filename.toLowerCase().includes(queryLower);
+      // Check display name match
+      const displayName = getDisplayName(node.filename, archiveType);
+      const matchesDisplayName = displayName && displayName.toLowerCase().includes(queryLower);
+
+      if (matchesFilename || matchesDisplayName) {
         matchingIndices.add(node.tocIndex);
         // Mark all ancestors
         for (const ancestorIdx of currentAncestors) {

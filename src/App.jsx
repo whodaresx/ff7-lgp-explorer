@@ -15,7 +15,19 @@ import {
   openFileForReplace,
   openFilesForAdd,
 } from './utils/fileService.ts';
+import charNames from './assets/char-names.json';
+import battleNames from './assets/battle-names.json';
 import './App.css';
+
+// Get display name for a file based on archive type
+function getDisplayName(filename, archiveType) {
+  if (!archiveType) return null;
+  const baseName = filename.toLowerCase().replace(/\.[^.]+$/, '');
+  if (baseName.length !== 4) return null;
+  if (archiveType === 'char') return charNames[baseName] || null;
+  if (archiveType === 'battle') return battleNames[baseName] || null;
+  return null;
+}
 
 function App() {
   const [lgp, setLgp] = useState(null);
@@ -62,6 +74,14 @@ function App() {
 
   // Force modal mode on narrow screens
   const effectivePreviewMode = previewMode === 'docked' && windowWidth < 900 ? 'modal' : previewMode;
+
+  // Determine archive type for display name lookups
+  const archiveType = useMemo(() => {
+    const name = archiveName.toLowerCase();
+    if (name === 'char.lgp') return 'char';
+    if (name === 'battle.lgp') return 'battle';
+    return null;
+  }, [archiveName]);
 
   // Build folder structure and file list from archive
   // archiveVersion is used to trigger re-computation when archive is modified
@@ -182,7 +202,7 @@ function App() {
     if (viewMode === 'hierarchy' && hierarchyItems) {
       // Apply search filter (keeps parent nodes visible when children match)
       if (searchQuery && hierarchyState.tree) {
-        const { items } = filterHierarchyBySearch(hierarchyItems, searchQuery, hierarchyState.tree);
+        const { items } = filterHierarchyBySearch(hierarchyItems, searchQuery, hierarchyState.tree, archiveType);
         return items;
       }
 
@@ -216,9 +236,12 @@ function App() {
     // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(f =>
-        f.filename.toLowerCase().includes(query)
-      );
+      filtered = filtered.filter(f => {
+        if (f.filename.toLowerCase().includes(query)) return true;
+        // Also check display name for char.lgp and battle.lgp
+        const displayName = getDisplayName(f.filename, archiveType);
+        return displayName && displayName.toLowerCase().includes(query);
+      });
       // Also filter folders by name when searching
       const filteredFolders = subfolders.filter(f =>
         f.name.toLowerCase().includes(query)
@@ -258,7 +281,7 @@ function App() {
     });
 
     return [...subfolders, ...sortedFiles];
-  }, [files, folders, currentPath, searchQuery, sortColumn, sortDirection, viewMode, hierarchyItems, hierarchyState.tree]);
+  }, [files, folders, currentPath, searchQuery, sortColumn, sortDirection, viewMode, hierarchyItems, hierarchyState.tree, archiveType]);
 
   const handleOpen = useCallback(async () => {
     const result = await openFile([{ name: 'LGP Archive', extensions: ['lgp'] }]);
@@ -670,7 +693,10 @@ function App() {
     // Clear search query if it would filter out the file
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      if (!file.filename.toLowerCase().includes(query)) {
+      const matchesFilename = file.filename.toLowerCase().includes(query);
+      const displayName = getDisplayName(file.filename, archiveType);
+      const matchesDisplayName = displayName && displayName.toLowerCase().includes(query);
+      if (!matchesFilename && !matchesDisplayName) {
         setSearchQuery('');
       }
     }
@@ -695,7 +721,7 @@ function App() {
         fileListRef.current.scrollToIndex(displayIndex);
       }
     }, 100);
-  }, [lgp, files, searchQuery, currentPath]);
+  }, [lgp, files, searchQuery, currentPath, archiveType]);
 
   const openQuickLook = useCallback(() => {
     if (!lgp || selectedIndices.size !== 1) return;
@@ -1000,7 +1026,7 @@ function App() {
       />
       
       <div className={`split-view ${effectivePreviewMode === 'docked' ? 'split-view-active' : ''}`}>
-        <div className="main-content">
+        <div className={`main-content ${archiveType ? 'has-display-name' : ''}`}>
           {lgp && (
             <div className="breadcrumb">
               <div className="breadcrumb-path">
@@ -1091,6 +1117,7 @@ function App() {
               }}
               hierarchyLoading={hierarchyState.status === 'building'}
               hierarchyProgress={hierarchyProgress}
+              archiveName={archiveName}
             />
           ) : (
             <div className="empty-state">

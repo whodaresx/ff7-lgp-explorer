@@ -25,6 +25,10 @@
   margin: 0;
 }
 
+.split-view-active .main-content.has-display-name {
+  min-width: 600px;
+}
+
 .main-content {
   flex: 1;
   display: flex;

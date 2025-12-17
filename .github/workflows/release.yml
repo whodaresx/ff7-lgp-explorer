@@ -93,6 +93,4 @@ jobs:
         if: matrix.platform == 'windows-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG=${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
-          gh release upload "$TAG" updater.json --clobber
+        run: gh release upload "${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}" updater.json --clobber

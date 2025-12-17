@@ -28,8 +28,9 @@
     "active": true,
     "targets": [
       "appimage",
+      "nsis",
       "dmg",
-      "nsis"
+      "app"
     ],
     "createUpdaterArtifacts": true,
     "macOS": {

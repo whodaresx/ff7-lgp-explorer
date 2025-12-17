@@ -1,9 +1,27 @@
-import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { getFileType, formatFileSize } from '../utils/fileTypes.ts';
+import charNames from '../assets/char-names.json';
+import battleNames from '../assets/battle-names.json';
 import './FileList.css';
 
 const ROW_HEIGHT = 32;
+
+// Get display name for a file based on archive type
+function getDisplayName(filename, archiveType) {
+  if (!archiveType) return null;
+
+  // Extract 4-letter code from filename (without extension)
+  const baseName = filename.toLowerCase().replace(/\.[^.]+$/, '');
+  if (baseName.length !== 4) return null;
+
+  if (archiveType === 'char') {
+    return charNames[baseName] || null;
+  } else if (archiveType === 'battle') {
+    return battleNames[baseName] || null;
+  }
+  return null;
+}
 
 export const FileList = forwardRef(function FileList({
   files,
@@ -21,8 +39,17 @@ export const FileList = forwardRef(function FileList({
   onToggleExpand,
   hierarchyLoading = false,
   hierarchyProgress = null,
+  archiveName = '',
 }, ref) {
   const parentRef = useRef(null);
+
+  // Determine archive type for display names column
+  const archiveType = useMemo(() => {
+    const name = archiveName.toLowerCase();
+    if (name === 'char.lgp') return 'char';
+    if (name === 'battle.lgp') return 'battle';
+    return null;
+  }, [archiveName]);
   
   // Scroll to top when path changes
   useEffect(() => {
@@ -90,13 +117,18 @@ export const FileList = forwardRef(function FileList({
 
   return (
     <div className="file-list-container">
-      <div className="file-list-header">
+      <div className={`file-list-header ${archiveType ? 'has-display-name' : ''}`}>
         <span className="col-index sortable" onClick={() => onSort('index')}>
           # {sortColumn === 'index' && <span className="sort-arrow">{sortDirection === 'asc' ? '▲' : '▼'}</span>}
         </span>
         <span className="col-name sortable" onClick={() => onSort('name')}>
           Name {sortColumn === 'name' && <span className="sort-arrow">{sortDirection === 'asc' ? '▲' : '▼'}</span>}
         </span>
+        {archiveType && (
+          <span className="col-display-name sortable" onClick={() => onSort('displayName')}>
+            Display Name {sortColumn === 'displayName' && <span className="sort-arrow">{sortDirection === 'asc' ? '▲' : '▼'}</span>}
+          </span>
+        )}
         <span className="col-size sortable" onClick={() => onSort('size')}>
           Size {sortColumn === 'size' && <span className="sort-arrow">{sortDirection === 'asc' ? '▲' : '▼'}</span>}
         </span>
@@ -144,7 +176,7 @@ export const FileList = forwardRef(function FileList({
             return (
               <div
                 key={virtualRow.key}
-                className={`file-row ${isSelected ? 'selected' : ''} ${item.isParent || item.isFolder ? 'folder-row' : ''} ${isHierarchyItem ? 'hierarchy-row' : ''}`}
+                className={`file-row ${isSelected ? 'selected' : ''} ${item.isParent || item.isFolder ? 'folder-row' : ''} ${isHierarchyItem ? 'hierarchy-row' : ''} ${archiveType ? 'has-display-name' : ''}`}
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -160,6 +192,7 @@ export const FileList = forwardRef(function FileList({
                   <>
                     <span className="col-index"></span>
                     <span className="col-name folder-name">📁 ..</span>
+                    {archiveType && <span className="col-display-name"></span>}
                     <span className="col-size"></span>
                     <span className="col-type">Parent folder</span>
                   </>
@@ -167,6 +200,7 @@ export const FileList = forwardRef(function FileList({
                   <>
                     <span className="col-index"></span>
                     <span className="col-name folder-name">📁 {item.name}</span>
+                    {archiveType && <span className="col-display-name"></span>}
                     <span className="col-size">{item.fileCount} files</span>
                     <span className="col-type">Folder</span>
                   </>
@@ -194,6 +228,9 @@ export const FileList = forwardRef(function FileList({
                         <span className="child-count">({item.childCount})</span>
                       )}
                     </span>
+                    {archiveType && (
+                      <span className="col-display-name">{getDisplayName(item.filename, archiveType)}</span>
+                    )}
                     <span className="col-size">{formatFileSize(item.filesize)}</span>
                     <span className="col-type">{getFileType(item.filename)}</span>
                   </>
