@@ -1,23 +1,23 @@
 {
-  "version": "1.0.6",
-  "notes": "Update 3d model rendering, other tweaks & fixes",
-  "pub_date": "2025-12-17T11:43:55Z",
+  "version": "1.0.7",
+  "notes": "Add display name for models in char.lgp and battle.lgp, fixed HRC model rendering for many models in char.lgp",
+  "pub_date": "2025-12-17T21:48:39Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "",
-      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.6/FF7.LGP.Explorer_1.0.6_x64-setup.exe"
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.7/FF7.LGP.Explorer_1.0.7_x64-setup.exe"
     },
     "darwin-x86_64": {
       "signature": "",
-      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.6/FF7.LGP.Explorer_x64.app.tar.gz"
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.7/FF7.LGP.Explorer_x64.app.tar.gz"
     },
     "darwin-aarch64": {
       "signature": "",
-      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.6/FF7.LGP.Explorer_aarch64.app.tar.gz"
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.7/FF7.LGP.Explorer_aarch64.app.tar.gz"
     },
     "linux-x86_64": {
       "signature": "",
-      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.6/FF7.LGP.Explorer_1.0.6_amd64.AppImage"
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.0.7/FF7.LGP.Explorer_1.0.7_amd64.AppImage"
     }
   }
 }
