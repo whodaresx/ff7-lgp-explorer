@@ -18,6 +18,7 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
     const [loadingStatus, setLoadingStatus] = useState('');
     const [selectedWeaponIndex, setSelectedWeaponIndex] = useState(0);
     const [cullingEnabled, setCullingEnabled] = useState(true);
+    const cameraStateRef = useRef(null);
 
     const { skeleton, stats, relatedFiles, error } = useMemo(() => {
         try {
@@ -32,6 +33,11 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
         } catch (err) {
             return { skeleton: null, stats: null, relatedFiles: [], error: err.message };
         }
+    }, [data, filename]);
+
+    // Reset camera state when switching to a different model
+    useEffect(() => {
+        cameraStateRef.current = null;
     }, [data, filename]);
 
     // Load P model parts and textures for battle locations
@@ -242,7 +248,8 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
         camera.up.set(0, 1, 0);
 
         // Renderer with legacy color handling for faithful FF7 colors
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        // Use logarithmic depth buffer for better depth precision at all distances
+        const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: !isBattleLocation });
         renderer.setSize(width, height);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.toneMapping = THREE.NoToneMapping;
@@ -319,7 +326,17 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
 
         // Position model so feet are at y=0 and fit camera
         if (!boundingBox.isEmpty()) {
-            fitCameraToScene(camera, controls, boundingBox, isBattleLocation, groundPlaneBox);
+            // Restore camera state if available (e.g., when switching weapons)
+            if (cameraStateRef.current) {
+                camera.position.copy(cameraStateRef.current.position);
+                controls.target.copy(cameraStateRef.current.target);
+                camera.near = cameraStateRef.current.near;
+                camera.far = cameraStateRef.current.far;
+                camera.updateProjectionMatrix();
+                controls.update();
+            } else {
+                fitCameraToScene(camera, controls, boundingBox, isBattleLocation, groundPlaneBox);
+            }
         }
 
         // Animation loop
@@ -342,6 +359,13 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
         window.addEventListener('resize', handleResize);
 
         return () => {
+            // Save camera state before cleanup for restoration on re-render
+            cameraStateRef.current = {
+                position: camera.position.clone(),
+                target: controls.target.clone(),
+                near: camera.near,
+                far: camera.far,
+            };
             window.removeEventListener('resize', handleResize);
             cancelAnimationFrame(animationId);
             controls.dispose();
@@ -487,7 +511,7 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
                                             >
                                                 {loadedWeaponModels.map((weapon, index) => (
                                                     <option key={index} value={index} disabled={!weapon.pfile}>
-                                                        {weapon.name}{!weapon.pfile ? ' (not found)' : ''}
+                                                        {index + 1}. {weapon.name}{!weapon.pfile ? ' (not found)' : ''}
                                                     </option>
                                                 ))}
                                             </select>
