@@ -5,7 +5,8 @@ import { PModelPreview } from './PModelPreview.jsx';
 import { SkeletonPreview } from './SkeletonPreview.jsx';
 import { HRCPreview } from './HRCPreview.jsx';
 import { RSDPreview } from './RSDPreview.jsx';
-import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isHRCFile, isRSDFile, isTextureFile } from '../utils/fileTypes.ts';
+import { FieldPreview } from './FieldPreview.jsx';
+import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isHRCFile, isRSDFile, isTextureFile, isFieldFile } from '../utils/fileTypes.ts';
 import { usePersistedState } from '../utils/settings.ts';
 import './QuickLook.css';
 
@@ -35,12 +36,13 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
   const isSkeletonFile = isBattleSkeletonFile(filename);
   const isHRC = isHRCFile(filename);
   const isRSD = isRSDFile(filename);
+  const isField = isFieldFile(filename);
   const [hexColumns, setHexColumns] = usePersistedState('hexColumns');
   const [viewMode, setViewMode] = usePersistedState('previewMode');
   const [plaintextWidth, setPlaintextWidth] = useState('Normal'); // 'Normal' | 'Full'
 
   // Check if showing a specialized preview (not hex mode)
-  const isSpecializedPreview = viewMode !== 'hex' && (isTexFile || isPFile || isSkeletonFile || isHRC || isRSD);
+  const isSpecializedPreview = viewMode !== 'hex' && (isTexFile || isPFile || isSkeletonFile || isHRC || isRSD || isField);
   // Check if showing hex view
   const isHexView = !isSpecializedPreview;
   // Check if plaintext is in full width mode
@@ -52,6 +54,7 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
     if (isSkeletonFile) return 'Battle Skeleton';
     if (isHRC) return 'Field Skeleton';
     if (isRSD) return 'Resource Definition';
+    if (isField) return 'Field';
     return 'Preview';
   };
 
@@ -61,8 +64,9 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
     if (isSkeletonFile) return 900;
     if (isHRC) return 900;
     if (isRSD) return 900;
+    if (isField) return 900;
     return HEX_COLUMN_WIDTHS[hexColumns] || 900;
-  }, [isTexFile, isPFile, isSkeletonFile, isHRC, isRSD, hexColumns]);
+  }, [isTexFile, isPFile, isSkeletonFile, isHRC, isRSD, isField, hexColumns]);
 
   const handleKeyDown = useCallback((e) => {
     // Close on Escape/Space in both modes
@@ -117,6 +121,8 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
           <HRCPreview data={data} filename={filename} onLoadFile={onLoadFile} />
         ) : isRSD ? (
           <RSDPreview data={data} onLoadFile={onLoadFile} />
+        ) : isField ? (
+          <FieldPreview data={data} filename={filename} />
         ) : (
           <HexViewer data={data} columns={hexColumns} onColumnsChange={setHexColumns} onPlaintextWidthChange={setPlaintextWidth} mode={mode} />
         )}
@@ -133,7 +139,8 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
             {isSkeletonFile && <span>Battle Skeleton</span>}
             {isHRC && <span>Field Skeleton</span>}
             {isRSD && <span>Resource Definition</span>}
-            {!isTexFile && !isPFile && !isSkeletonFile && !isHRC && !isRSD && <span>Hex View</span>}
+            {isField && <span>Field</span>}
+            {!isTexFile && !isPFile && !isSkeletonFile && !isHRC && !isRSD && !isField && <span>Hex View</span>}
           </>
         )}
         {isTextureFile(filename) && onFindReferences && (
@@ -148,7 +155,7 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
             Find references
           </a>
         )}
-        {(isTexFile || isPFile || isSkeletonFile || isHRC || isRSD) && (
+        {(isTexFile || isPFile || isSkeletonFile || isHRC || isRSD || isField) && (
           <span style={{ marginLeft: 'auto' }}>
             {viewMode === 'hex' ? (
               <a

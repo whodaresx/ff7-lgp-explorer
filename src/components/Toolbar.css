@@ -103,6 +103,12 @@
   letter-spacing: 0.5px;
 }
 
+.toolbar-version {
+  font-weight: 400;
+  opacity: 0.8;
+  font-size: 12px;
+}
+
 /* Hide button labels on smaller screens */
 @media (max-width: 999px) {
   .toolbar-group button .button-label {

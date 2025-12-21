@@ -84,7 +84,7 @@ export const Toolbar = forwardRef(function Toolbar({
       </div>
       
       <div className="toolbar-title">
-        LGP Explorer
+        LGP Explorer <span className="toolbar-version">v{__APP_VERSION__}</span>
       </div>
     </div>
   );

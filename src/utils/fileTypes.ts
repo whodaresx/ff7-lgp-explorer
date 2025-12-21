@@ -47,6 +47,13 @@ export function isRSDFile(filename: string): boolean {
   return filename.toLowerCase().endsWith('.rsd');
 }
 
+export function isFieldFile(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  // Field files are alphanumeric names without extensions (matched by filenamePatterns)
+  // They don't have a file extension and match the pattern for field names
+  return /^[a-z0-9_]+$/i.test(lower) && !getBattleFileType(lower) && !isBattleTexFile(lower) && !isBattleSkeletonFile(lower) && !isPModelFile(lower);
+}
+
 export function isTextureFile(filename: string): boolean {
   return filename.toLowerCase().endsWith('.tex') || isBattleTexFile(filename);
 }

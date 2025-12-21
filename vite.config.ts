@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import pkg from './package.json'
 
 const host = process.env.TAURI_DEV_HOST
 const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined
@@ -32,5 +33,6 @@ export default defineConfig({
   // Define platform detection at build time
   define: {
     __TAURI_BUILD__: JSON.stringify(isTauri),
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
 })
