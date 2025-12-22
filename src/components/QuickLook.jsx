@@ -6,7 +6,7 @@ import { SkeletonPreview } from './SkeletonPreview.jsx';
 import { HRCPreview } from './HRCPreview.jsx';
 import { RSDPreview } from './RSDPreview.jsx';
 import { FieldPreview } from './FieldPreview.jsx';
-import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isMagicSkeletonFile, isHRCFile, isRSDFile, isTextureFile, isFieldFile } from '../utils/fileTypes.ts';
+import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isMagicSkeletonFile, isMagicTextureFile, isHRCFile, isRSDFile, isTextureFile, isFieldFile } from '../utils/fileTypes.ts';
 import { usePersistedState } from '../utils/settings.ts';
 import './QuickLook.css';
 
@@ -31,7 +31,7 @@ const ExpandIcon = () => (
 );
 
 export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal', onDock, onUndock, onFindReferences }) {
-  const isTexFile = filename.toLowerCase().endsWith('.tex') || isBattleTexFile(filename);
+  const isTexFile = filename.toLowerCase().endsWith('.tex') || isBattleTexFile(filename) || isMagicTextureFile(filename);
   const isPFile = isPModelFile(filename);
   const isSkeletonFile = isBattleSkeletonFile(filename) || isMagicSkeletonFile(filename);
   const isHRC = isHRCFile(filename);

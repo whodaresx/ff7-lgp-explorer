@@ -69,7 +69,7 @@ export function isFieldFile(filename: string): boolean {
 }
 
 export function isTextureFile(filename: string): boolean {
-  return filename.toLowerCase().endsWith('.tex') || isBattleTexFile(filename);
+  return filename.toLowerCase().endsWith('.tex') || isBattleTexFile(filename) || isMagicTextureFile(filename);
 }
 
 /**
