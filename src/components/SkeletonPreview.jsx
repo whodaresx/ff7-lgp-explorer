@@ -15,25 +15,39 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
     const [loadedBoneModels, setLoadedBoneModels] = useState(null);
     const [loadedWeaponModels, setLoadedWeaponModels] = useState(null);
     const [loadedAnimationPack, setLoadedAnimationPack] = useState(null);
-    const [loadingStatus, setLoadingStatus] = useState('');
+    const [_loadingStatus, setLoadingStatus] = useState('');
     // Track which filename the loaded data corresponds to (null = loading, string = ready)
     const [loadedDataKey, setLoadedDataKey] = useState(null);
     const [selectedWeaponIndex, setSelectedWeaponIndex] = useState(0);
     const [cullingEnabled, setCullingEnabled] = useState(true);
     const cameraStateRef = useRef(null);
 
-    const { skeleton, stats, relatedFiles, error } = useMemo(() => {
+    const { skeleton, stats, relatedFiles, isMagicFormat, magicBaseName, error } = useMemo(() => {
         try {
             const parsed = new SkeletonFile(data);
-            const baseName = filename.slice(0, 2);
+            // Detect magic format (*.d files) vs battle format (4-letter names ending in 'aa')
+            const isMagicFmt = filename.toLowerCase().endsWith('.d');
+            let relFiles;
+            let magicBase = null;
+            if (isMagicFmt) {
+                // Magic format: remove ".d" extension to get base name
+                magicBase = filename.slice(0, -2);
+                relFiles = parsed.getRelatedFilesMagic(magicBase);
+            } else {
+                // Battle format: use first 2 characters
+                const baseName = filename.slice(0, 2);
+                relFiles = parsed.getRelatedFiles(baseName);
+            }
             return {
                 skeleton: parsed,
                 stats: parsed.getStats(),
-                relatedFiles: parsed.getRelatedFiles(baseName),
+                relatedFiles: relFiles,
+                isMagicFormat: isMagicFmt,
+                magicBaseName: magicBase,
                 error: null,
             };
         } catch (err) {
-            return { skeleton: null, stats: null, relatedFiles: [], error: err.message };
+            return { skeleton: null, stats: null, relatedFiles: [], isMagicFormat: false, magicBaseName: null, error: err.message };
         }
     }, [data, filename]);
 
@@ -116,16 +130,23 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
         if (skeleton.model.bones.length === 0) return;
 
         const loadBoneData = async () => {
-            const base = filename.slice(0, 2).toUpperCase();
             const bones = skeleton.model.bones;
 
             setLoadingStatus('Loading textures...');
 
-            // Load textures (XXAC to XXAL)
+            // Load textures
             const textures = [];
             for (let i = 0; i < skeleton.model.header.nTextures && i < 10; i++) {
-                const suffix = String.fromCharCode('C'.charCodeAt(0) + i);
-                const texName = `${base}A${suffix}`;
+                let texName;
+                if (isMagicFormat && magicBaseName) {
+                    // Magic format: base.t00, base.t01, etc.
+                    texName = `${magicBaseName}.t${i.toString().padStart(2, '0')}`;
+                } else {
+                    // Battle format: XXAC, XXAD, etc.
+                    const base = filename.slice(0, 2).toUpperCase();
+                    const suffix = String.fromCharCode('C'.charCodeAt(0) + i);
+                    texName = `${base}A${suffix}`;
+                }
                 const texData = onLoadFile(texName);
 
                 if (texData) {
@@ -143,14 +164,27 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
             setLoadedTextures(textures);
             setLoadingStatus('Loading bone models...');
 
-            // Load P model for each bone (XXAM, XXAN, etc.)
+            // Load P model for each bone
             const boneModels = [];
             let suffix1 = 'A';
             let suffix2 = 'M';
 
             for (let i = 0; i < bones.length; i++) {
                 const bone = bones[i];
-                const partName = `${base}${suffix1}${suffix2}`;
+                let partName;
+                if (isMagicFormat && magicBaseName) {
+                    // Magic format: base.p00, base.p01, etc.
+                    partName = `${magicBaseName}.p${i.toString().padStart(2, '0')}`;
+                } else {
+                    // Battle format: XXAM, XXAN, etc.
+                    const base = filename.slice(0, 2).toUpperCase();
+                    partName = `${base}${suffix1}${suffix2}`;
+                    suffix2 = String.fromCharCode(suffix2.charCodeAt(0) + 1);
+                    if (suffix2 > 'Z') {
+                        suffix1 = String.fromCharCode(suffix1.charCodeAt(0) + 1);
+                        suffix2 = 'A';
+                    }
+                }
 
                 if (bone.hasModel) {
                     const partData = onLoadFile(partName);
@@ -167,20 +201,15 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
                 } else {
                     boneModels.push({ boneIndex: i, name: partName, pfile: null });
                 }
-
-                suffix2 = String.fromCharCode(suffix2.charCodeAt(0) + 1);
-                if (suffix2 > 'Z') {
-                    suffix1 = String.fromCharCode(suffix1.charCodeAt(0) + 1);
-                    suffix2 = 'A';
-                }
             }
 
             setLoadedBoneModels(boneModels);
 
-            // Load weapon models if this skeleton has weapons (??CK, ??CL, etc.)
+            // Load weapon models if this skeleton has weapons (battle format only: ??CK, ??CL, etc.)
             const weaponModels = [];
             const nWeapons = skeleton.model.header.nWeapons;
-            if (nWeapons > 0) {
+            if (nWeapons > 0 && !isMagicFormat) {
+                const base = filename.slice(0, 2).toUpperCase();
                 setLoadingStatus('Loading weapons...');
                 for (let i = 0; i < nWeapons; i++) {
                     const weaponSuffix = String.fromCharCode('K'.charCodeAt(0) + i);
@@ -202,8 +231,16 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
 
             setLoadingStatus('Loading animation...');
 
-            // Try to load animation pack (XXDA) with skeleton and weapon animations
-            const animName = `${base}DA`;
+            // Try to load animation pack
+            let animName;
+            if (isMagicFormat && magicBaseName) {
+                // Magic format: base.a00
+                animName = `${magicBaseName}.a00`;
+            } else {
+                // Battle format: XXDA
+                const base = filename.slice(0, 2).toUpperCase();
+                animName = `${base}DA`;
+            }
             const animData = onLoadFile(animName);
             if (animData) {
                 try {
@@ -234,7 +271,7 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
         return () => {
             setLoadedDataKey(null);
         };
-    }, [skeleton, filename, onLoadFile]);
+    }, [skeleton, filename, onLoadFile, isMagicFormat, magicBaseName]);
 
     // Initialize Three.js scene
     useEffect(() => {
@@ -445,7 +482,7 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
             ) : isLoading ? (
                 <div className="skeleton-loading">
                     {/* <div className="loading-text">Loading...</div>
-                    <div className="loading-detail">{loadingStatus}</div> */}
+                    <div className="loading-detail">{_loadingStatus}</div> */}
                 </div>
             ) : isBattleLocation && (!onLoadFile || (loadedParts && loadedParts.length === 0)) ? (
                 <div className="skeleton-no-hierarchy">

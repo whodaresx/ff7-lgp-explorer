@@ -171,4 +171,34 @@ export class SkeletonFile {
 
         return files;
     }
+
+    // Generate list of related files for magic.lgp model format (*.d skeleton files)
+    getRelatedFilesMagic(baseName: string): { name: string; type: string }[] {
+        const { header } = this.model;
+        const files: { name: string; type: string }[] = [];
+
+        // Textures: base.t00, base.t01, etc.
+        for (let i = 0; i < header.nTextures; i++) {
+            const idx = i.toString().padStart(2, '0');
+            files.push({ name: `${baseName}.t${idx}`, type: 'Texture' });
+        }
+
+        // P models by bone index: base.p00, base.p01, etc.
+        for (let i = 0; i < this.model.bones.length; i++) {
+            const bone = this.model.bones[i];
+            const idx = i.toString().padStart(2, '0');
+            files.push({
+                name: `${baseName}.p${idx}`,
+                type: bone.hasModel ? 'Bone Model' : 'Bone (no model)',
+            });
+        }
+
+        // Animation files: base.a00, base.a01, etc.
+        for (let i = 0; i < header.nsSkeletonAnims; i++) {
+            const idx = i.toString().padStart(2, '0');
+            files.push({ name: `${baseName}.a${idx}`, type: 'Animation' });
+        }
+
+        return files;
+    }
 }

@@ -2,7 +2,7 @@
 import { HRCFile } from '../hrcfile';
 import { RSDFile } from '../rsdfile';
 import { SkeletonFile } from '../skeleton';
-import { isBattleSkeletonFile } from './fileTypes';
+import { isBattleSkeletonFile, isMagicSkeletonFile } from './fileTypes';
 import modelAnimations from '../assets/model-animations.json';
 import charNames from '../assets/char-names.json';
 import battleNames from '../assets/battle-names.json';
@@ -53,6 +53,11 @@ export function isBattleArchive(filenames: string[]): boolean {
 
   const hasSkeletons = battleFiles.some(f => isBattleSkeletonFile(f));
   return hasSkeletons;
+}
+
+// Detect if archive uses magic.lgp model naming conventions (*.d skeleton files)
+export function isMagicModelArchive(filenames: string[]): boolean {
+  return filenames.some(f => isMagicSkeletonFile(f));
 }
 
 // Helper to yield to the main thread properly
@@ -355,10 +360,101 @@ export async function buildBattleHierarchy(lgp: LGP, onProgress?: ProgressCallba
   return [...skeletonNodes, ...orphanFiles];
 }
 
+// Build hierarchy for magic.lgp model archives (*.d Skeleton → *.pXX, *.tXX, *.aXX)
+export async function buildMagicModelHierarchy(lgp: LGP, onProgress?: ProgressCallback): Promise<HierarchyNode[]> {
+  const toc = lgp.archive.toc;
+  const fileMap = new Map(
+    toc.map((e, i) => [e.filename.toLowerCase(), { ...e, tocIndex: i }])
+  );
+
+  const referenced = new Set<string>();
+  const skeletonNodes: HierarchyNode[] = [];
+
+  // Find all magic skeleton files (*.d pattern)
+  const skeletonFiles = toc.filter(e => isMagicSkeletonFile(e.filename));
+
+  for (let i = 0; i < skeletonFiles.length; i++) {
+    const entry = skeletonFiles[i];
+    try {
+      const data = lgp.getFile(entry.filename);
+      if (!data) continue;
+
+      const skeleton = new SkeletonFile(data);
+      // Get base name by removing .d extension
+      const baseName = entry.filename.slice(0, -2);
+      const relatedFiles = skeleton.getRelatedFilesMagic(baseName);
+      const tocEntry = fileMap.get(entry.filename.toLowerCase())!;
+
+      referenced.add(entry.filename.toLowerCase());
+
+      const node: HierarchyNode = {
+        filename: tocEntry.filename,
+        tocIndex: tocEntry.tocIndex,
+        filesize: tocEntry.filesize,
+        children: [],
+      };
+
+      // Add related files as children
+      for (const related of relatedFiles) {
+        const relatedFilename = related.name.toLowerCase();
+        const relatedEntry = fileMap.get(relatedFilename);
+
+        if (relatedEntry) {
+          referenced.add(relatedFilename);
+          node.children.push({
+            filename: relatedEntry.filename,
+            tocIndex: relatedEntry.tocIndex,
+            filesize: relatedEntry.filesize,
+            children: [],
+          });
+        }
+      }
+
+      skeletonNodes.push(node);
+    } catch { /* skip invalid files */ }
+
+    // Yield to main thread every 20 files to keep UI responsive
+    if ((i + 1) % 20 === 0 || i === skeletonFiles.length - 1) {
+      onProgress?.({
+        phase: 'skeleton',
+        current: i + 1,
+        total: skeletonFiles.length,
+        message: `Parsing magic skeleton files (${i + 1}/${skeletonFiles.length})`,
+      });
+      await yieldToMain();
+    }
+  }
+
+  onProgress?.({
+    phase: 'building',
+    current: 0,
+    total: 1,
+    message: 'Building hierarchy tree...',
+  });
+
+  // Find orphan files
+  const orphanFiles: HierarchyNode[] = [];
+  for (const [filename, entry] of fileMap) {
+    if (!referenced.has(filename)) {
+      orphanFiles.push({
+        filename: entry.filename,
+        tocIndex: entry.tocIndex,
+        filesize: entry.filesize,
+        children: [],
+      });
+    }
+  }
+
+  return [...skeletonNodes, ...orphanFiles];
+}
+
 // Build hierarchy (auto-detect archive type)
 export async function buildHierarchy(lgp: LGP, onProgress?: ProgressCallback): Promise<HierarchyNode[]> {
   const filenames = lgp.archive.toc.map(e => e.filename);
 
+  if (isMagicModelArchive(filenames)) {
+    return buildMagicModelHierarchy(lgp, onProgress);
+  }
   if (isBattleArchive(filenames)) {
     return buildBattleHierarchy(lgp, onProgress);
   }

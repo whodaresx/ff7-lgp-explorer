@@ -6,7 +6,7 @@ import { SkeletonPreview } from './SkeletonPreview.jsx';
 import { HRCPreview } from './HRCPreview.jsx';
 import { RSDPreview } from './RSDPreview.jsx';
 import { FieldPreview } from './FieldPreview.jsx';
-import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isHRCFile, isRSDFile, isTextureFile, isFieldFile } from '../utils/fileTypes.ts';
+import { formatFileSize, isBattleTexFile, isPModelFile, isBattleSkeletonFile, isMagicSkeletonFile, isHRCFile, isRSDFile, isTextureFile, isFieldFile } from '../utils/fileTypes.ts';
 import { usePersistedState } from '../utils/settings.ts';
 import './QuickLook.css';
 
@@ -33,7 +33,7 @@ const ExpandIcon = () => (
 export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal', onDock, onUndock, onFindReferences }) {
   const isTexFile = filename.toLowerCase().endsWith('.tex') || isBattleTexFile(filename);
   const isPFile = isPModelFile(filename);
-  const isSkeletonFile = isBattleSkeletonFile(filename);
+  const isSkeletonFile = isBattleSkeletonFile(filename) || isMagicSkeletonFile(filename);
   const isHRC = isHRCFile(filename);
   const isRSD = isRSDFile(filename);
   const isField = isFieldFile(filename);
@@ -51,7 +51,7 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
   const getFileTypeName = () => {
     if (isTexFile) return 'TEX Image';
     if (isPFile) return '3D Model';
-    if (isSkeletonFile) return 'Battle Skeleton';
+    if (isSkeletonFile) return isMagicSkeletonFile(filename) ? 'Magic Skeleton' : 'Battle Skeleton';
     if (isHRC) return 'Field Skeleton';
     if (isRSD) return 'Resource Definition';
     if (isField) return 'Field';
@@ -136,7 +136,7 @@ export function QuickLook({ filename, data, onClose, onLoadFile, mode = 'modal',
           <>
             {isTexFile && <span>TEX Image</span>}
             {isPFile && <span>3D Model</span>}
-            {isSkeletonFile && <span>Battle Skeleton</span>}
+            {isSkeletonFile && <span>{isMagicSkeletonFile(filename) ? 'Magic Skeleton' : 'Battle Skeleton'}</span>}
             {isHRC && <span>Field Skeleton</span>}
             {isRSD && <span>Resource Definition</span>}
             {isField && <span>Field</span>}

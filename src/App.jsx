@@ -169,7 +169,8 @@ function App() {
       setHierarchyState({ status: 'ready', tree, error: null });
       setHierarchyProgress(null);
       justLoadedHierarchyRef.current = true;
-      setExpandedNodes(getAllParentIndices(tree));
+      // Start with all nodes collapsed
+      setExpandedNodes(new Set());
     }).catch(err => {
       if (hierarchyBuildRef.current !== buildId) return;
       hierarchyBuildRef.current = null;

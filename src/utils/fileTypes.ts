@@ -39,6 +39,20 @@ export function isBattleSkeletonFile(filename: string): boolean {
   return suffix === 'aa';
 }
 
+export function isMagicSkeletonFile(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.d');
+}
+
+export function isMagicTextureFile(filename: string): boolean {
+  // Magic texture files: base.t00, base.t01, etc.
+  return /\.t\d{2}$/i.test(filename.toLowerCase());
+}
+
+export function isMagicAnimationFile(filename: string): boolean {
+  // Magic animation files: base.a00, base.a01, etc.
+  return /\.a\d{2}$/i.test(filename.toLowerCase());
+}
+
 export function isHRCFile(filename: string): boolean {
   return filename.toLowerCase().endsWith('.hrc');
 }
@@ -98,27 +112,37 @@ export function isPModelFile(filename: string): boolean {
 
 export function getFileType(filename: string): string {
   const lower = filename.toLowerCase();
-  
+
   if (filename.startsWith('maplist')) return 'Map List';
+
+  // Check for magic.lgp model format files (*.d, *.pXX, *.tXX, *.aXX)
+  if (isMagicSkeletonFile(lower)) return 'Magic Skeleton';
+  if (isMagicTextureFile(lower)) return 'Magic Texture';
+  if (isMagicAnimationFile(lower)) return 'Magic Animation';
+  // Note: .pXX files are handled by isPModelFile and extension map below
 
   // Check 4-letter battle file patterns first
   const battleType = getBattleFileType(lower);
   if (battleType) return battleType;
-  
+
   // Check filename patterns
   for (const [pattern, type] of filenamePatterns) {
     if (pattern.test(lower)) {
       return type;
     }
   }
-  
+
   // Get extension
   const lastDot = lower.lastIndexOf('.');
   if (lastDot === -1) {
     return 'Unknown';
   }
-  
+
   const ext = lower.slice(lastDot + 1);
+
+  // Check for .pXX pattern (magic.lgp model files)
+  if (/^p\d{2}$/.test(ext)) return 'Magic Model';
+
   return extensionMap[ext] || 'Unknown';
 }
 
