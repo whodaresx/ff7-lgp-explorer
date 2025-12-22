@@ -1,23 +1,23 @@
 {
-  "version": "1.1.0",
-  "notes": "Field background previews",
-  "pub_date": "2025-12-21T21:34:27Z",
+  "version": "1.1.1",
+  "notes": "Fix field background rendering issues in the desktop apps\"",
+  "pub_date": "2025-12-22T08:49:04Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "",
-      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.1.0/FF7.LGP.Explorer_1.1.0_x64-setup.exe"
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.1.1/FF7.LGP.Explorer_1.1.1_x64-setup.exe"
     },
     "darwin-x86_64": {
       "signature": "",
-      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.1.0/FF7.LGP.Explorer_x64.app.tar.gz"
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.1.1/FF7.LGP.Explorer_x64.app.tar.gz"
     },
     "darwin-aarch64": {
       "signature": "",
-      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.1.0/FF7.LGP.Explorer_aarch64.app.tar.gz"
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.1.1/FF7.LGP.Explorer_aarch64.app.tar.gz"
     },
     "linux-x86_64": {
       "signature": "",
-      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.1.0/FF7.LGP.Explorer_1.1.0_amd64.AppImage"
+      "url": "https://github.com/maciej-trebacz/ff7-lgp-explorer/releases/download/v1.1.1/FF7.LGP.Explorer_1.1.1_amd64.AppImage"
     }
   }
 }
