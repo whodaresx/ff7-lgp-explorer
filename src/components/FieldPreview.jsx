@@ -8,7 +8,17 @@ const fieldFileCache = new Map();
 const MAX_CACHE_SIZE = 10;
 
 function getFieldFileCached(data) {
-    const key = `${data.length}-${data[0]}-${data[data.length - 1]}`;
+    // Create a stronger cache key by sampling multiple bytes throughout the data
+    // This prevents collisions between different files with same length/boundaries
+    const len = data.length;
+    const samples = [
+        data[0],
+        data[Math.floor(len * 0.25)],
+        data[Math.floor(len * 0.5)],
+        data[Math.floor(len * 0.75)],
+        data[len - 1]
+    ];
+    const key = `${len}-${samples.join('-')}`;
 
     if (fieldFileCache.has(key)) {
         const cached = fieldFileCache.get(key);
@@ -131,17 +141,16 @@ export function FieldPreview({ data }) {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [paramsDropdownOpen]);
 
-    // Cache for decoded textures (textureID-paletteID -> ImageData)
+    // Cache for decoded textures (textureID-paletteID -> Canvas with pre-rendered texture)
+    // Using Canvas instead of ImageData to avoid Safari/WebKit race conditions
+    // with putImageData/drawImage on offscreen canvases
     const textureCache = useRef(new Map());
     // Track which field the cache belongs to (for synchronous invalidation)
     const textureCacheFieldRef = useRef(null);
 
-    // Get or create texture ImageData
-    const getTextureImageData = useCallback((textureID, paletteID) => {
-        if (!field) {
-            console.warn('getTextureImageData called with no field');
-            return null;
-        }
+    // Get or create texture canvas (pre-rendered for better Safari compatibility)
+    const getTextureCanvas = useCallback((textureID, paletteID) => {
+        if (!field) return null;
 
         // Clear cache synchronously if field changed (prevents stale texture flash)
         if (textureCacheFieldRef.current !== field) {
@@ -155,14 +164,20 @@ export function FieldPreview({ data }) {
         }
 
         const rgba = field.getTextureRGBA(textureID, paletteID);
-        if (!rgba) {
-            console.warn(`field.getTextureRGBA(${textureID}, ${paletteID}) returned null`);
-            return null;
-        }
+        if (!rgba) return null;
 
+        // Create a canvas and pre-render the texture to it
+        // This avoids repeated putImageData calls during tile rendering,
+        // which can cause race conditions in Safari/WebKit
+        const textureCanvas = document.createElement('canvas');
+        textureCanvas.width = 256;
+        textureCanvas.height = 256;
+        const textureCtx = textureCanvas.getContext('2d');
         const imageData = new ImageData(rgba, 256, 256);
-        textureCache.current.set(cacheKey, imageData);
-        return imageData;
+        textureCtx.putImageData(imageData, 0, 0);
+
+        textureCache.current.set(cacheKey, textureCanvas);
+        return textureCanvas;
     }, [field]);
 
     // Render the background to canvas
@@ -179,13 +194,6 @@ export function FieldPreview({ data }) {
         // Clear canvas
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Create offscreen canvas for texture operations
-        const textureCanvas = document.createElement('canvas');
-        textureCanvas.width = 256;
-        textureCanvas.height = 256;
-        const textureCtx = textureCanvas.getContext('2d');
-
 
         // Get tiles sorted by render order
         const sortedTiles = field.getTilesByRenderOrder();
@@ -210,11 +218,10 @@ export function FieldPreview({ data }) {
             // Layer 0 ignores blending flag
             const useBlending = tile.blending && layerIndex !== 0;
             const textureID = useBlending ? tile.textureID2 : tile.textureID;
-            const imageData = getTextureImageData(textureID, tile.paletteID);
-            if (!imageData) continue;
 
-            // Draw texture to offscreen canvas
-            textureCtx.putImageData(imageData, 0, 0);
+            // Get pre-rendered texture canvas (avoids putImageData in render loop)
+            const textureCanvas = getTextureCanvas(textureID, tile.paletteID);
+            if (!textureCanvas) continue;
 
             // Get source coordinates - use secondary coords when blending
             const srcX = useBlending ? tile.srcX2 : tile.srcX;
@@ -237,7 +244,8 @@ export function FieldPreview({ data }) {
                 // Get the background pixels at this location
                 const bgData = ctx.getImageData(dstX, dstY, tileSize, tileSize);
 
-                // Get the foreground tile pixels
+                // Get the foreground tile pixels from the cached texture canvas
+                const textureCtx = textureCanvas.getContext('2d');
                 const fgData = textureCtx.getImageData(srcX, srcY, tileSize, tileSize);
 
                 // Blend pixels
@@ -320,7 +328,7 @@ export function FieldPreview({ data }) {
                 ctx.stroke();
             }
         }
-    }, [field, background, dimensions, layerVisibility, showGrid, getTextureImageData, paramStates, viewMode]);
+    }, [field, background, dimensions, layerVisibility, showGrid, getTextureCanvas, paramStates, viewMode]);
 
     // Pan handlers
     const handleMouseDown = (e) => {

@@ -203,8 +203,9 @@ export class LGP {
         if (this.modified[entry.filename]) return this.modified[entry.filename];
 
         const offset = entry.offset + FILE_HEADER_SIZE;
-        // Return a view into the original data instead of copying
-        return this.data.subarray(offset, offset + entry.filesize);
+        // Return an independent copy of the file data
+        // Using slice() instead of subarray() to avoid buffer sharing issues in Tauri
+        return this.data.slice(offset, offset + entry.filesize);
     }
 
     setFile(name: string, data: Uint8Array): boolean {

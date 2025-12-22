@@ -667,12 +667,14 @@ export class FieldFile {
 
     constructor(buffer: Uint8Array) {
         // Field files have a 4-byte header with the compressed size, then LZSS data
-        // Use subarray to avoid copying (just creates a view)
-        const compressedData = buffer.subarray(4);
+        // Use slice() to create an independent copy - required for Tauri where
+        // the original buffer may be shared across multiple file reads
+        const compressedData = buffer.slice(4);
 
         // Decompress LZSS data
         const lzss = new Lzss();
         this.rawData = lzss.decompress(compressedData);
+
         this.data = this.parse(this.rawData, buffer.length);
     }
 
@@ -728,9 +730,11 @@ export class FieldFile {
     }
 
     // Get raw section data (without the 4-byte length prefix)
+    // Uses slice() to create an independent copy with its own ArrayBuffer.
+    // This simplifies downstream parsing by ensuring byteOffset is always 0.
     getSectionData(sectionName: keyof FieldData['sections']): Uint8Array {
         const section = this.data.sections[sectionName];
-        return this.rawData.subarray(section.dataOffset, section.dataOffset + section.length);
+        return this.rawData.slice(section.dataOffset, section.dataOffset + section.length);
     }
 
     /** Get parsed palette section (lazy loaded) */
