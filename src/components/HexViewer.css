@@ -25,6 +25,18 @@
   margin-left: 0px;
 }
 
+.hex-toolbar-info {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.hex-toolbar-error {
+  margin-left: auto;
+  font-size: 11px;
+  color: #e06c75;
+}
+
 .hex-segmented {
   display: flex;
 }

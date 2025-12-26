@@ -1,14 +1,17 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { Lzss } from '../lzss';
 import './HexViewer.css';
 
 const COLUMN_OPTIONS = [16, 24, 32];
 const VIEW_TYPES = ['Hex', 'Plaintext'];
 const WIDTH_OPTIONS = ['Normal', 'Full'];
+const COMPRESSION_OPTIONS = ['Raw', 'Decompress'];
 
 export function HexViewer({ data, columns, onColumnsChange, onPlaintextWidthChange, mode = 'modal' }) {
   const parentRef = useRef(null);
   const [plaintextWidth, setPlaintextWidth] = useState('Normal');
+  const [compressionMode, setCompressionMode] = useState('Raw');
 
   const handlePlaintextWidthChange = (width) => {
     setPlaintextWidth(width);
@@ -17,28 +20,79 @@ export function HexViewer({ data, columns, onColumnsChange, onPlaintextWidthChan
     }
   };
 
+  // Reset compression mode when data changes
+  useEffect(() => {
+    setCompressionMode('Raw');
+  }, [data]);
+
+  // Attempt LZSS decompression when requested
+  const { displayData, decompressionError, decompressionInfo } = useMemo(() => {
+    if (compressionMode === 'Raw') {
+      return { displayData: data, decompressionError: null, decompressionInfo: null };
+    }
+
+    try {
+      const lzss = new Lzss();
+
+      // Many FF7 compressed files have a 4-byte little-endian header with the compressed size
+      // Try decompressing with header skip first
+      if (data.length > 4) {
+        const headerValue = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
+        const compressedData = data.subarray(4);
+
+        // If header value roughly matches the remaining data length, it's likely a size header
+        if (headerValue > 0 && headerValue <= compressedData.length + 100) {
+          try {
+            const decompressed = lzss.decompress(compressedData);
+            return {
+              displayData: decompressed,
+              decompressionError: null,
+              decompressionInfo: `Decompressed: ${compressedData.length} → ${decompressed.length} bytes`
+            };
+          } catch {
+            // Fall through to try without header
+          }
+        }
+      }
+
+      // Try decompressing without header skip
+      const decompressed = lzss.decompress(data);
+      return {
+        displayData: decompressed,
+        decompressionError: null,
+        decompressionInfo: `Decompressed: ${data.length} → ${decompressed.length} bytes`
+      };
+    } catch (err) {
+      return {
+        displayData: data,
+        decompressionError: `Decompression failed: ${err.message}`,
+        decompressionInfo: null
+      };
+    }
+  }, [data, compressionMode]);
+
   // Auto-detect if content is likely plaintext by checking first 100 bytes
   const isLikelyText = useMemo(() => {
-    const checkLength = Math.min(100, data.length);
+    const checkLength = Math.min(100, displayData.length);
     for (let i = 0; i < checkLength; i++) {
-      const byte = data[i];
+      const byte = displayData[i];
       // Printable ASCII (32-126), tab (9), LF (10), CR (13)
       if (!((byte >= 32 && byte < 127) || byte === 9 || byte === 10 || byte === 13)) {
         return false;
       }
     }
     return checkLength > 0;
-  }, [data]);
+  }, [displayData]);
 
   const [viewType, setViewType] = useState(isLikelyText ? 'Plaintext' : 'Hex');
 
-  // Reset view type when opening a different file
+  // Reset view type when opening a different file or when compression mode changes
   useEffect(() => {
     setViewType(isLikelyText ? 'Plaintext' : 'Hex');
-  }, [data, isLikelyText]);
+  }, [data, displayData, isLikelyText]);
 
   // Only compute row count, not actual row data (avoid O(n) slice calls upfront)
-  const rowCount = useMemo(() => Math.ceil(data.length / columns), [data.length, columns]);
+  const rowCount = useMemo(() => Math.ceil(displayData.length / columns), [displayData.length, columns]);
 
   // Lazily compute plaintext content only when in Plaintext view mode
   // Also check isLikelyText to avoid computing on binary files during the render
@@ -47,13 +101,13 @@ export function HexViewer({ data, columns, onColumnsChange, onPlaintextWidthChan
     if (viewType !== 'Plaintext' || !isLikelyText) return '';
 
     // Use array and join for O(n) instead of O(n²) string concatenation
-    const chars = new Array(data.length);
+    const chars = new Array(displayData.length);
     let j = 0;
-    for (let i = 0; i < data.length; i++) {
-      const byte = data[i];
+    for (let i = 0; i < displayData.length; i++) {
+      const byte = displayData[i];
       if (byte >= 32 && byte < 127) {
         chars[j++] = String.fromCharCode(byte);
-      } else if (byte === 13 && data[i + 1] === 10) {
+      } else if (byte === 13 && displayData[i + 1] === 10) {
         // CRLF (0D 0A) - treat as single line break
         chars[j++] = '\n';
         i++;
@@ -64,7 +118,7 @@ export function HexViewer({ data, columns, onColumnsChange, onPlaintextWidthChan
       }
     }
     return chars.slice(0, j).join('');
-  }, [data, viewType, isLikelyText]);
+  }, [displayData, viewType, isLikelyText]);
 
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -78,7 +132,7 @@ export function HexViewer({ data, columns, onColumnsChange, onPlaintextWidthChan
     const offset = index * columns;
     return {
       offset,
-      bytes: data.subarray(offset, Math.min(offset + columns, data.length))
+      bytes: displayData.subarray(offset, Math.min(offset + columns, displayData.length))
     };
   };
 
@@ -140,6 +194,18 @@ export function HexViewer({ data, columns, onColumnsChange, onPlaintextWidthChan
             </button>
           ))}
         </div>
+        <span className="hex-toolbar-label">Data:</span>
+        <div className="hex-segmented">
+          {COMPRESSION_OPTIONS.map(opt => (
+            <button
+              key={opt}
+              className={`hex-segment ${compressionMode === opt ? 'active' : ''}`}
+              onClick={() => setCompressionMode(opt)}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
         {viewType === 'Hex' && (
           <>
             <span className="hex-toolbar-label">Columns:</span>
@@ -171,6 +237,12 @@ export function HexViewer({ data, columns, onColumnsChange, onPlaintextWidthChan
               ))}
             </div>
           </>
+        )}
+        {decompressionInfo && (
+          <span className="hex-toolbar-info">{decompressionInfo}</span>
+        )}
+        {decompressionError && (
+          <span className="hex-toolbar-error">{decompressionError}</span>
         )}
       </div>
       

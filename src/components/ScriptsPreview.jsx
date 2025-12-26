@@ -28,85 +28,301 @@ function decodeDialogText(data) {
 
 // Script slot names from FF7 documentation
 const SCRIPT_SLOT_NAMES = [
-    'Init', 'Main', 'Script 2', 'Script 3',
-    'Script 4', 'Script 5', 'Script 6', 'Script 7',
-    'Script 8', 'Script 9', 'Script 10', 'Script 11',
-    'Script 12', 'Script 13', 'Script 14', 'Script 15',
-    'Script 16', 'Script 17', 'Script 18', 'Script 19',
-    'Script 20', 'Script 21', 'Script 22', 'Script 23',
-    'Script 24', 'Script 25', 'Script 26', 'Script 27',
-    'Script 28', 'Script 29', 'Script 30', 'Script 31',
+    'Init', 'Main', 'Script 1', 'Script 2',
+    'Script 3', 'Script 4', 'Script 5', 'Script 6',
+    'Script 7', 'Script 8', 'Script 9', 'Script 10',
+    'Script 11', 'Script 12', 'Script 13', 'Script 14',
+    'Script 15', 'Script 16', 'Script 17', 'Script 18',
+    'Script 19', 'Script 20', 'Script 21', 'Script 22',
+    'Script 23', 'Script 24', 'Script 25', 'Script 26',
+    'Script 27', 'Script 28', 'Script 29', 'Script 30',
+    'Script 31',
 ];
 
 /**
- * Determine which scripts are "active" (point to actual code vs empty RET)
- * Two scripts pointing to the same offset are considered empty
+ * Find the byte offset after the first RET instruction starting from a given position
+ * Returns -1 if no RET found or if RET is at end of data
  */
-function getActiveScripts(entity, scriptDataOffset) {
-    const offsets = entity.scripts;
-    const offsetCounts = {};
+function findOffsetAfterFirstRET(scriptData, startOffset) {
+    let pos = startOffset;
+    while (pos < scriptData.length) {
+        const opcode = scriptData[pos];
+        const length = OPCODE_LENGTHS[opcode] ?? 1;
 
-    // Count how many scripts point to each offset
-    for (const offset of offsets) {
-        offsetCounts[offset] = (offsetCounts[offset] || 0) + 1;
+        if (opcode === 0x00) { // RET
+            // Return position after the RET
+            const afterRet = pos + length;
+            if (afterRet < scriptData.length) {
+                return afterRet;
+            }
+            return -1; // RET is at end, nothing after
+        }
+
+        pos += length;
     }
-
-    // A script is active if:
-    // 1. It's the only one pointing to that offset OR
-    // 2. It points to a unique offset within a reasonable range
-    // In practice, empty scripts often share the same RET instruction
-    return offsets.map((offset, idx) => {
-        // First script (Init) at offset 0 relative to scriptData is usually active
-        if (idx === 0 && offset === scriptDataOffset) return true;
-        // Scripts sharing an offset are likely empty (pointing to shared RET)
-        return offsetCounts[offset] === 1;
-    });
+    return -1; // No RET found
 }
 
 /**
- * Get script size estimate by looking at next script's offset
+ * Determine which scripts are "active" (have actual code)
+ *
+ * FF7 script structure:
+ * - scripts[0] contains BOTH Init AND Main, separated by a RET opcode
+ *   - Init = code from scripts[0] up to first RET
+ *   - Main = code after the first RET in scripts[0]
+ * - scripts[1] = Script 1
+ * - scripts[2] = Script 2
+ * - etc.
+ *
+ * Display slots (33 total):
+ * - Slot 0 (Init) → scripts[0], up to first RET
+ * - Slot 1 (Main) → scripts[0], after first RET
+ * - Slot 2 (Script 1) → scripts[1]
+ * - Slot N+1 (Script N) → scripts[N] for N >= 1
  */
-function getScriptSizes(entity, scriptDataOffset, scriptDataEnd) {
+function getActiveScripts(entity, scriptSection) {
+    const { scriptDataOffset, scriptData } = scriptSection;
+
+    // We return 33 active flags for 33 display slots
+    const result = [];
+
+    // Slot 0: Init (scripts[0] up to first RET)
+    const initOffset = entity.scripts[0];
+    const initRelOffset = initOffset - scriptDataOffset;
+    const initInBounds = initRelOffset >= 0 && initRelOffset < scriptData.length;
+    const initFirstOpcode = initInBounds ? scriptData[initRelOffset] : 0x00;
+    const initActive = initInBounds && initFirstOpcode !== 0x00;
+    result.push(initActive);
+
+    // Slot 1: Main (scripts[0] after first RET)
+    let mainActive = false;
+    if (initActive) {
+        const afterFirstRet = findOffsetAfterFirstRET(scriptData, initRelOffset);
+        if (afterFirstRet !== -1 && afterFirstRet < scriptData.length) {
+            const mainFirstOpcode = scriptData[afterFirstRet];
+            mainActive = mainFirstOpcode !== 0x00;
+        }
+    }
+    result.push(mainActive);
+
+    // Build offset -> first slot map for scripts[1] onwards
+    // Note: slots 2-32 map to scripts[1-31]
+    const offsetToFirstSlot = new Map();
+    for (let i = 1; i < entity.scripts.length; i++) {
+        const offset = entity.scripts[i];
+        if (!offsetToFirstSlot.has(offset)) {
+            offsetToFirstSlot.set(offset, i);
+        }
+    }
+
+    // Slots 2-32: Script 1 through Script 31 (scripts[1] through scripts[31])
+    for (let i = 1; i < entity.scripts.length; i++) {
+        const absoluteOffset = entity.scripts[i];
+        const relOffset = absoluteOffset - scriptDataOffset;
+
+        // Bounds check
+        if (relOffset < 0 || relOffset >= scriptData.length) {
+            result.push(false);
+            continue;
+        }
+
+        const firstOpcode = scriptData[relOffset];
+
+        // If first opcode is RET, script is empty
+        if (firstOpcode === 0x00) {
+            result.push(false);
+            continue;
+        }
+
+        // If multiple scripts share this offset, only the first one is active
+        const firstSlotWithThisOffset = offsetToFirstSlot.get(absoluteOffset);
+        if (firstSlotWithThisOffset !== i) {
+            result.push(false);
+            continue;
+        }
+
+        result.push(true);
+    }
+
+    return result;
+}
+
+// FF7 opcode lengths (index = opcode, value = total instruction length including opcode)
+const OPCODE_LENGTHS = [
+    /* 00 RET      */ 1,  /* 01 REQ      */ 3,  /* 02 REQSW    */ 3,  /* 03 REQEW    */ 3,
+    /* 04 PREQ     */ 3,  /* 05 PRQSW    */ 3,  /* 06 PRQEW    */ 3,  /* 07 RETTO    */ 2,
+    /* 08 JOIN     */ 2,  /* 09 SPLIT    */ 15, /* 0a SPTYE    */ 6,  /* 0b GTPYE    */ 6,
+    /* 0c          */ 1,  /* 0d          */ 1,  /* 0e DSKCG    */ 2,  /* 0f SPECIAL  */ 2,
+    /* 10 JMPF     */ 2,  /* 11 JMPFL    */ 3,  /* 12 JMPB     */ 2,  /* 13 JMPBL    */ 3,
+    /* 14 IFUB     */ 6,  /* 15 IFUBL    */ 7,  /* 16 IFSW     */ 8,  /* 17 IFSWL    */ 9,
+    /* 18 IFUW     */ 8,  /* 19 IFUWL    */ 9,  /* 1a          */ 10, /* 1b          */ 3,
+    /* 1c          */ 6,  /* 1d          */ 1,  /* 1e          */ 1,  /* 1f          */ 1,
+    /* 20 MINIGAME */ 11, /* 21 TUTOR    */ 2,  /* 22 BTMD2    */ 5,  /* 23 BTRLD    */ 3,
+    /* 24 WAIT     */ 3,  /* 25 NFADE    */ 9,  /* 26 BLINK    */ 2,  /* 27 BGMOVIE  */ 2,
+    /* 28 KAWAI    */ 3,  /* 29 KAWIW    */ 1,  /* 2a PMOVA    */ 2,  /* 2b SLIP     */ 2,
+    /* 2c BGPDH    */ 5,  /* 2d BGSCR    */ 7,  /* 2e WCLS     */ 2,  /* 2f WSIZW    */ 10,
+    /* 30 IFKEY    */ 4,  /* 31 IFKEYON  */ 4,  /* 32 IFKEYOFF */ 4,  /* 33 UC       */ 2,
+    /* 34 PDIRA    */ 2,  /* 35 PTURA    */ 4,  /* 36 WSPCL    */ 5,  /* 37 WNUMB    */ 8,
+    /* 38 STTIM    */ 6,  /* 39 GOLDu    */ 6,  /* 3a GOLDd    */ 6,  /* 3b CHGLD    */ 4,
+    /* 3c HMPMAX1  */ 1,  /* 3d HMPMAX2  */ 1,  /* 3e MHMMX    */ 1,  /* 3f HMPMAX3  */ 1,
+    /* 40 MESSAGE  */ 3,  /* 41 MPARA    */ 5,  /* 42 MPRA2    */ 6,  /* 43 MPNAM    */ 2,
+    /* 44          */ 1,  /* 45 MPu      */ 5,  /* 46          */ 1,  /* 47 MPd      */ 5,
+    /* 48 ASK      */ 7,  /* 49 MENU     */ 4,  /* 4a MENU2    */ 2,  /* 4b BTLTB    */ 2,
+    /* 4c          */ 1,  /* 4d HPu      */ 5,  /* 4e          */ 1,  /* 4f HPd      */ 5,
+    /* 50 WINDOW   */ 10, /* 51 WMOVE    */ 6,  /* 52 WMODE    */ 4,  /* 53 WREST    */ 2,
+    /* 54 WCLSE    */ 2,  /* 55 WROW     */ 3,  /* 56 GWCOL    */ 7,  /* 57 SWCOL    */ 7,
+    /* 58 STITM    */ 5,  /* 59 DLITM    */ 5,  /* 5a CKITM    */ 5,  /* 5b SMTRA    */ 7,
+    /* 5c DMTRA    */ 8,  /* 5d CMTRA    */ 10, /* 5e SHAKE    */ 8,  /* 5f NOP      */ 1,
+    /* 60 MAPJUMP  */ 10, /* 61 SCRLO    */ 2,  /* 62 SCRLC    */ 5,  /* 63 SCRLA    */ 6,
+    /* 64 SCR2D    */ 6,  /* 65 SCRCC    */ 1,  /* 66 SCR2DC   */ 9,  /* 67 SCRLW    */ 1,
+    /* 68 SCR2DL   */ 9,  /* 69 MPDSP    */ 2,  /* 6a VWOFT    */ 7,  /* 6b FADE     */ 9,
+    /* 6c FADEW    */ 1,  /* 6d IDLCK    */ 4,  /* 6e LSTMP    */ 3,  /* 6f SCRLP    */ 6,
+    /* 70 BATTLE   */ 4,  /* 71 BTLON    */ 2,  /* 72 BTLMD    */ 3,  /* 73 PGTDR    */ 4,
+    /* 74 GETPC    */ 4,  /* 75 PXYZI    */ 8,  /* 76 PLUS!    */ 4,  /* 77 PLUS2!   */ 5,
+    /* 78 MINUS!   */ 4,  /* 79 MINUS2!  */ 5,  /* 7a INC!     */ 3,  /* 7b INC2!    */ 3,
+    /* 7c DEC!     */ 3,  /* 7d DEC2!    */ 3,  /* 7e TLKON    */ 2,  /* 7f RDMSD    */ 3,
+    /* 80 SETBYTE  */ 4,  /* 81 SETWORD  */ 5,  /* 82 BITON    */ 4,  /* 83 BITOFF   */ 4,
+    /* 84 BITXOR   */ 4,  /* 85 PLUS     */ 4,  /* 86 PLUS2    */ 5,  /* 87 MINUS    */ 4,
+    /* 88 MINUS2   */ 5,  /* 89 MUL      */ 4,  /* 8a MUL2     */ 5,  /* 8b DIV      */ 4,
+    /* 8c DIV2     */ 5,  /* 8d MOD      */ 4,  /* 8e MOD2     */ 5,  /* 8f AND      */ 4,
+    /* 90 AND2     */ 5,  /* 91 OR       */ 4,  /* 92 OR2      */ 5,  /* 93 XOR      */ 4,
+    /* 94 XOR2     */ 5,  /* 95 INC      */ 3,  /* 96 INC2     */ 3,  /* 97 DEC      */ 3,
+    /* 98 DEC2     */ 3,  /* 99 RANDOM   */ 3,  /* 9a LBYTE    */ 4,  /* 9b HBYTE    */ 5,
+    /* 9c 2BYTE    */ 6,  /* 9d SETX     */ 7,  /* 9e GETX     */ 7,  /* 9f SEARCHX  */ 11,
+    /* a0 PC       */ 2,  /* a1 CHAR     */ 2,  /* a2 DFANM    */ 3,  /* a3 ANIME1   */ 3,
+    /* a4 VISI     */ 2,  /* a5 XYZI     */ 11, /* a6 XYI      */ 9,  /* a7 XYZ      */ 9,
+    /* a8 MOVE     */ 6,  /* a9 CMOVE    */ 6,  /* aa MOVA     */ 2,  /* ab TURA     */ 4,
+    /* ac ANIMW    */ 1,  /* ad FMOVE    */ 6,  /* ae ANIME2   */ 3,  /* af ANIM!1   */ 3,
+    /* b0 CANIM1   */ 5,  /* b1 CANM!1   */ 5,  /* b2 MSPED    */ 4,  /* b3 DIR      */ 3,
+    /* b4 TURNGEN  */ 6,  /* b5 TURN     */ 6,  /* b6 DIRA     */ 2,  /* b7 GETDIR   */ 4,
+    /* b8 GETAXY   */ 5,  /* b9 GETAI    */ 4,  /* ba ANIM!2   */ 3,  /* bb CANIM2   */ 5,
+    /* bc CANM!2   */ 5,  /* bd ASPED    */ 4,  /* be          */ 1,  /* bf CC       */ 2,
+    /* c0 JUMP     */ 11, /* c1 AXYZI    */ 8,  /* c2 LADER    */ 15, /* c3 OFST     */ 12,
+    /* c4 OFSTW    */ 1,  /* c5 TALKR    */ 3,  /* c6 SLIDR    */ 3,  /* c7 SOLID    */ 2,
+    /* c8 PRTYP    */ 2,  /* c9 PRTYM    */ 2,  /* ca PRTYE    */ 4,  /* cb IFPRTYQ  */ 3,
+    /* cc IFMEMBQ  */ 3,  /* cd MMBud    */ 3,  /* ce MMBLK    */ 2,  /* cf MMBUK    */ 2,
+    /* d0 LINE     */ 13, /* d1 LINON    */ 2,  /* d2 MPJPO    */ 2,  /* d3 SLINE    */ 16,
+    /* d4 SIN      */ 10, /* d5 COS      */ 10, /* d6 TLKR2    */ 4,  /* d7 SLDR2    */ 4,
+    /* d8 PMJMP    */ 3,  /* d9 PMJMP2   */ 1,  /* da AKAO2    */ 15, /* db FCFIX    */ 2,
+    /* dc CCANM    */ 4,  /* dd ANIMB    */ 1,  /* de TURNW    */ 1,  /* df MPPAL    */ 11,
+    /* e0 BGON     */ 4,  /* e1 BGOFF    */ 4,  /* e2 BGROL    */ 3,  /* e3 BGROL2   */ 3,
+    /* e4 BGCLR    */ 3,  /* e5 STPAL    */ 5,  /* e6 LDPAL    */ 5,  /* e7 CPPAL    */ 5,
+    /* e8 RTPAL    */ 7,  /* e9 ADPAL    */ 10, /* ea MPPAL2   */ 10, /* eb STPLS    */ 5,
+    /* ec LDPLS    */ 5,  /* ed CPPAL2   */ 8,  /* ee RTPAL2   */ 8,  /* ef ADPAL2   */ 11,
+    /* f0 MUSIC    */ 2,  /* f1 SOUND    */ 5,  /* f2 AKAO     */ 14, /* f3 MUSVT    */ 2,
+    /* f4 MUSVM    */ 2,  /* f5 MULCK    */ 2,  /* f6 BMUSC    */ 2,  /* f7 CHMPH    */ 4,
+    /* f8 PMVIE    */ 2,  /* f9 MOVIE    */ 1,  /* fa MVIEF    */ 3,  /* fb MVCAM    */ 2,
+    /* fc FMUSC    */ 2,  /* fd CMUSC    */ 8,  /* fe CHMST    */ 3,  /* ff GAMEOVER */ 1,
+];
+
+/**
+ * Get the actual script offset for a display slot index
+ * Display slots 0-1 (Init/Main) both use entity.scripts[0]
+ * Display slots 2-32 use entity.scripts[1-31]
+ */
+function getScriptOffsetForSlot(entity, displaySlot) {
+    if (displaySlot <= 1) {
+        return entity.scripts[0];
+    }
+    return entity.scripts[displaySlot - 1];
+}
+
+/**
+ * Get script size estimate for display slots
+ * Returns array of 33 sizes for 33 display slots
+ */
+function getScriptSizes(entity, scriptSection) {
+    const { scriptDataOffset, scriptData } = scriptSection;
     const sizes = [];
-    const sortedOffsets = [...entity.scripts]
-        .map((offset, idx) => ({ offset, idx }))
+
+    // Slot 0 (Init): size is from scripts[0] to first RET
+    const initOffset = entity.scripts[0];
+    const initRelOffset = initOffset - scriptDataOffset;
+    let initSize = 0;
+    let mainStart = -1;
+
+    if (initRelOffset >= 0 && initRelOffset < scriptData.length) {
+        // Find first RET to determine Init size and Main start
+        let pos = initRelOffset;
+        while (pos < scriptData.length) {
+            const opcode = scriptData[pos];
+            const length = OPCODE_LENGTHS[opcode] ?? 1;
+            if (opcode === 0x00) { // RET
+                initSize = pos - initRelOffset + length;
+                mainStart = pos + length;
+                break;
+            }
+            pos += length;
+        }
+        if (initSize === 0) {
+            initSize = scriptData.length - initRelOffset;
+        }
+    }
+    sizes.push(initSize);
+
+    // Slot 1 (Main): size is from after first RET to second RET
+    let mainSize = 0;
+    if (mainStart !== -1 && mainStart < scriptData.length) {
+        let pos = mainStart;
+        while (pos < scriptData.length) {
+            const opcode = scriptData[pos];
+            const length = OPCODE_LENGTHS[opcode] ?? 1;
+            if (opcode === 0x00) { // RET
+                mainSize = pos - mainStart + length;
+                break;
+            }
+            pos += length;
+        }
+        if (mainSize === 0) {
+            mainSize = scriptData.length - mainStart;
+        }
+    }
+    sizes.push(mainSize);
+
+    // Slots 2-32: Script 1 through Script 31
+    const sortedOffsets = [...entity.scripts.slice(1)]
+        .map((offset, idx) => ({ offset, idx: idx + 1 }))
         .sort((a, b) => a.offset - b.offset);
 
-    for (let i = 0; i < sortedOffsets.length; i++) {
-        const { offset, idx } = sortedOffsets[i];
-        let size = 0;
+    for (let i = 1; i < entity.scripts.length; i++) {
+        const offset = entity.scripts[i];
+        const relOffset = offset - scriptDataOffset;
+
+        if (relOffset < 0 || relOffset >= scriptData.length) {
+            sizes.push(0);
+            continue;
+        }
 
         // Find next different offset
-        let nextOffset = scriptDataEnd;
-        for (let j = i + 1; j < sortedOffsets.length; j++) {
+        const sortedIdx = sortedOffsets.findIndex(s => s.idx === i);
+        let nextOffset = scriptDataOffset + scriptData.length;
+        for (let j = sortedIdx + 1; j < sortedOffsets.length; j++) {
             if (sortedOffsets[j].offset > offset) {
                 nextOffset = sortedOffsets[j].offset;
                 break;
             }
         }
 
-        size = nextOffset - offset;
-        sizes[idx] = size;
+        sizes.push(nextOffset - offset);
     }
 
     return sizes;
 }
 
 function EntityPanel({ entity, entityIndex, scriptSection, dialogRefs, isExpanded, onToggle }) {
-    const { scriptDataOffset } = scriptSection;
-    const scriptDataEnd = scriptDataOffset + scriptSection.scriptData.length;
-
+    // activeScripts returns 33 flags for 33 display slots
     const activeScripts = useMemo(
-        () => getActiveScripts(entity, scriptDataOffset),
-        [entity, scriptDataOffset]
+        () => getActiveScripts(entity, scriptSection),
+        [entity, scriptSection]
     );
 
+    // scriptSizes returns 33 sizes for 33 display slots
     const scriptSizes = useMemo(
-        () => getScriptSizes(entity, scriptDataOffset, scriptDataEnd),
-        [entity, scriptDataOffset, scriptDataEnd]
+        () => getScriptSizes(entity, scriptSection),
+        [entity, scriptSection]
     );
 
-    // Count active scripts
+    // Count active scripts (out of 33 display slots)
     const activeCount = activeScripts.filter(Boolean).length;
 
     // Get dialogs referenced by this entity
@@ -118,7 +334,7 @@ function EntityPanel({ entity, entityIndex, scriptSection, dialogRefs, isExpande
                 <span className="scripts-entity-arrow">{isExpanded ? '▼' : '▶'}</span>
                 <span className="scripts-entity-name">{entity.name || `Entity ${entityIndex}`}</span>
                 <span className="scripts-entity-stats">
-                    {activeCount}/32 scripts
+                    {activeCount}/33 scripts
                     {entityDialogRefs.length > 0 && ` • ${entityDialogRefs.length} dialogs`}
                 </span>
             </div>
@@ -126,19 +342,23 @@ function EntityPanel({ entity, entityIndex, scriptSection, dialogRefs, isExpande
             {isExpanded && (
                 <div className="scripts-entity-content">
                     <div className="scripts-slot-grid">
-                        {entity.scripts.map((offset, idx) => {
-                            const isActive = activeScripts[idx];
-                            const size = scriptSizes[idx];
-                            const refs = entityDialogRefs.filter(r => r.scriptIndex === idx);
+                        {SCRIPT_SLOT_NAMES.map((slotName, displaySlot) => {
+                            const isActive = activeScripts[displaySlot];
+                            const size = scriptSizes[displaySlot];
+                            const offset = getScriptOffsetForSlot(entity, displaySlot);
+                            // Dialog refs use the raw script index, need to map from display slot
+                            // Display slot 0,1 -> script index 0; Display slot N (N>=2) -> script index N-1
+                            const scriptIndex = displaySlot <= 1 ? 0 : displaySlot - 1;
+                            const refs = entityDialogRefs.filter(r => r.scriptIndex === scriptIndex);
 
                             return (
                                 <div
-                                    key={idx}
+                                    key={displaySlot}
                                     className={`scripts-slot ${isActive ? 'active' : 'empty'}`}
-                                    title={`${SCRIPT_SLOT_NAMES[idx]}\nOffset: 0x${offset.toString(16).toUpperCase()}\nSize: ~${size} bytes${refs.length > 0 ? `\nDialogs: ${refs.map(r => r.dialogId).join(', ')}` : ''}`}
+                                    title={`${slotName}\nOffset: 0x${offset.toString(16).toUpperCase()}\nSize: ~${size} bytes${refs.length > 0 ? `\nDialogs: ${refs.map(r => r.dialogId).join(', ')}` : ''}`}
                                 >
-                                    <span className="scripts-slot-idx">{idx}</span>
-                                    <span className="scripts-slot-name">{SCRIPT_SLOT_NAMES[idx]}</span>
+                                    <span className="scripts-slot-idx">{displaySlot}</span>
+                                    <span className="scripts-slot-name">{slotName}</span>
                                     {refs.length > 0 && (
                                         <span className="scripts-slot-dialogs">
                                             💬{refs.length}
