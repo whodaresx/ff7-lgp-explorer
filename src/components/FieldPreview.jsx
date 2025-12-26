@@ -1,6 +1,7 @@
 import { useMemo, useRef, useEffect, useState, useCallback } from 'react';
-import { FieldFile } from '../fieldfile.ts';
+import { FieldFile, findInitialParamStates } from '../fieldfile.ts';
 import { WalkmeshPreview } from './WalkmeshPreview.jsx';
+import { ScriptsPreview } from './ScriptsPreview.jsx';
 import './FieldPreview.css';
 
 // Simple cache for parsed FieldFile objects to avoid re-parsing
@@ -64,23 +65,25 @@ export function FieldPreview({ data }) {
     // Track when background canvas has been rendered (used to sync with WalkmeshPreview)
     const [backgroundRenderKey, setBackgroundRenderKey] = useState(0);
 
-    const { field, background, dimensions, walkmesh, gateways, error } = useMemo(() => {
+    const { field, background, dimensions, walkmesh, gateways, scriptSection, error } = useMemo(() => {
         try {
             const parsedField = getFieldFileCached(data);
             const bg = parsedField.getBackgroundSection();
             const dims = parsedField.getBackgroundDimensions();
             const wm = parsedField.getWalkmeshSection();
             const gw = parsedField.getGateways();
+            const ss = parsedField.getScriptSection();
             return {
                 field: parsedField,
                 background: bg,
                 dimensions: dims,
                 walkmesh: wm,
                 gateways: gw,
+                scriptSection: ss,
                 error: null,
             };
         } catch (err) {
-            return { field: null, background: null, dimensions: null, walkmesh: null, gateways: [], error: err.message };
+            return { field: null, background: null, dimensions: null, walkmesh: null, gateways: [], scriptSection: null, error: err.message };
         }
     }, [data]);
 
@@ -104,6 +107,12 @@ export function FieldPreview({ data }) {
         };
     }, [field, background]);
 
+    // Get initial param states from BGON opcodes in Init scripts
+    const initialParamStates = useMemo(() => {
+        if (!scriptSection) return new Map();
+        return findInitialParamStates(scriptSection);
+    }, [scriptSection]);
+
     // State for param bitmasks - stores which state bits are active for each param
     // Default is 0x00 (all bits off) so conditional tiles are hidden by default
     const [paramBitmasks, setParamBitmasks] = useState({});
@@ -119,15 +128,29 @@ export function FieldPreview({ data }) {
     }, [conditionalParams, paramBitmasks]);
 
     // Reset state when data changes (new field loaded)
-    const prevDataRef = useRef(data);
+    const prevDataRef = useRef(null);
+    const initializedRef = useRef(false);
     /* eslint-disable react-hooks/set-state-in-effect */
     useEffect(() => {
-        if (data !== prevDataRef.current) {
+        // Initialize on first load or when data changes
+        const isFirstLoad = !initializedRef.current;
+        const dataChanged = prevDataRef.current !== null && data !== prevDataRef.current;
+
+        if (isFirstLoad || dataChanged) {
+            initializedRef.current = true;
             prevDataRef.current = data;
-            setParamBitmasks({});
-            setLayerVisibility([true, true, true, true]);
+            // Initialize param bitmasks from BGON opcodes in Init scripts
+            const initialBitmasks = {};
+            for (const [param, mask] of initialParamStates) {
+                initialBitmasks[param] = mask;
+            }
+            setParamBitmasks(initialBitmasks);
+            // Reset layer visibility when data changes (not on first load)
+            if (dataChanged) {
+                setLayerVisibility([true, true, true, true]);
+            }
         }
-    }, [data]);
+    }, [data, initialParamStates]);
     /* eslint-enable react-hooks/set-state-in-effect */
 
     // Close params dropdown on outside click
@@ -444,13 +467,17 @@ export function FieldPreview({ data }) {
     const handleWalkmeshReset = useCallback(() => {
         // Reset layer visibility to all on
         setLayerVisibility([true, true, true, true]);
-        // Reset param bitmasks to default (all off)
-        setParamBitmasks({});
+        // Reset param bitmasks to BGON-derived initial states
+        const initialBitmasks = {};
+        for (const [param, mask] of initialParamStates) {
+            initialBitmasks[param] = mask;
+        }
+        setParamBitmasks(initialBitmasks);
         // Reset the 3D view
         if (walkmeshResetRef.current) {
             walkmeshResetRef.current();
         }
-    }, []);
+    }, [initialParamStates]);
 
     const handleWalkmeshResetCallback = useCallback((resetFn) => {
         walkmeshResetRef.current = resetFn;
@@ -492,6 +519,13 @@ export function FieldPreview({ data }) {
                         title="3D walkmesh view (top-down)"
                     >
                         3D Walkmesh
+                    </button>
+                    <button
+                        className={viewMode === 'scripts' ? 'active' : ''}
+                        onClick={() => setViewMode('scripts')}
+                        title="Scripts and dialogs"
+                    >
+                        Scripts
                     </button>
                 </div>
 
@@ -577,36 +611,40 @@ export function FieldPreview({ data }) {
                     </>
                 )}
 
-                {/* Gates/IDs controls - show for both modes */}
-                <button
-                    className={`field-toggle-btn ${walkmeshShowGateways ? 'active' : ''}`}
-                    onClick={() => setWalkmeshShowGateways(!walkmeshShowGateways)}
-                    disabled={viewMode === 'background' && !showWalkmesh}
-                    title="Toggle gateways"
-                >
-                    Gates
-                </button>
+                {/* Gates/IDs controls - show for background and walkmesh modes */}
+                {viewMode !== 'scripts' && (
+                    <>
+                        <button
+                            className={`field-toggle-btn ${walkmeshShowGateways ? 'active' : ''}`}
+                            onClick={() => setWalkmeshShowGateways(!walkmeshShowGateways)}
+                            disabled={viewMode === 'background' && !showWalkmesh}
+                            title="Toggle gateways"
+                        >
+                            Gates
+                        </button>
 
-                <button
-                    className={`field-toggle-btn ${walkmeshShowTriangleIds ? 'active' : ''}`}
-                    onClick={() => setWalkmeshShowTriangleIds(!walkmeshShowTriangleIds)}
-                    disabled={viewMode === 'background' && !showWalkmesh}
-                    title="Toggle triangle IDs"
-                >
-                    IDs
-                </button>
+                        <button
+                            className={`field-toggle-btn ${walkmeshShowTriangleIds ? 'active' : ''}`}
+                            onClick={() => setWalkmeshShowTriangleIds(!walkmeshShowTriangleIds)}
+                            disabled={viewMode === 'background' && !showWalkmesh}
+                            title="Toggle triangle IDs"
+                        >
+                            IDs
+                        </button>
 
-                {/* Spacer to push Reset to the right */}
-                <div style={{ flex: 1 }} />
+                        {/* Spacer to push Reset to the right */}
+                        <div style={{ flex: 1 }} />
 
-                {/* Reset button - always on far right */}
-                <button
-                    className="field-toggle-btn"
-                    onClick={handleWalkmeshReset}
-                    title="Reset view"
-                >
-                    Reset
-                </button>
+                        {/* Reset button - always on far right */}
+                        <button
+                            className="field-toggle-btn"
+                            onClick={handleWalkmeshReset}
+                            title="Reset view"
+                        >
+                            Reset
+                        </button>
+                    </>
+                )}
             </div>
 
             {/* Hidden canvas for background rendering (used by WalkmeshPreview as texture) */}
@@ -669,6 +707,11 @@ export function FieldPreview({ data }) {
                     backgroundDimensions={null}
                     backgroundRenderKey={0}
                 />
+            )}
+
+            {/* Scripts mode */}
+            {viewMode === 'scripts' && scriptSection && (
+                <ScriptsPreview scriptSection={scriptSection} />
             )}
 
             {/* Footer info bar */}

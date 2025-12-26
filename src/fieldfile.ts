@@ -140,6 +140,310 @@ export interface BackgroundSection {
 }
 
 // ============================================================================
+// Script Section (Section 1) Types
+// ============================================================================
+
+export interface ScriptHeader {
+    version: number;           // u16 @ 0x00, always 0x0502
+    entityCount: number;       // u8 @ 0x02
+    modelCount: number;        // u8 @ 0x03
+    dialogOffset: number;      // u16 @ 0x04, offset to dialog subsection
+    akaoBlockCount: number;    // u16 @ 0x06, number of Akao/tuto blocks
+    scale: number;             // u16 @ 0x08, field scale (9-bit fixed point)
+    creator: string;           // 8 chars @ 0x10
+    name: string;              // 8 chars @ 0x18
+}
+
+export interface ScriptEntity {
+    name: string;              // 8-char entity name
+    scripts: number[];         // 32 script entry points (offsets into script data)
+}
+
+export interface ScriptDialog {
+    index: number;
+    offset: number;            // Absolute offset within section
+    text: Uint8Array;          // Raw dialog data (FF7 text encoding, 0xFF terminated)
+}
+
+export interface ScriptSection {
+    header: ScriptHeader;
+    entities: ScriptEntity[];
+    akaoOffsets: number[];     // Offsets to Akao/tuto blocks
+    dialogs: ScriptDialog[];
+    scriptData: Uint8Array;    // Raw script bytecode
+    scriptDataOffset: number;  // Offset where script bytecode begins
+}
+
+/** Field script opcodes (partial list) */
+export enum ScriptOpcode {
+    RET = 0x00,      // Return from script
+    REQ = 0x01,      // Request remote execution (asynchronous)
+    REQSW = 0x02,    // Request remote execution (synchronous, default priority)
+    REQEW = 0x03,    // Request remote execution (synchronous, waits)
+    PREQ = 0x04,     // Request remote execution (asynchronous, party member)
+    PRQSW = 0x05,    // Request remote execution (synchronous, party)
+    PRQEW = 0x06,    // Request remote execution (synchronous, party, waits)
+    RETTO = 0x07,    // Return to specific script index
+    JOIN = 0x08,     // Wait for party member to join
+    SPLIT = 0x09,    // Split party
+    SPTYE = 0x0A,    // Set party type
+    GTPYE = 0x0B,    // Get party type
+    // Dialog/window opcodes
+    MESSAGE = 0x40,  // Display dialog in window
+    MPARA = 0x41,    // Set message parameter (numeric)
+    MPRA2 = 0x42,    // Set message parameter (2-byte)
+    MPNAM = 0x43,    // Set message parameter (name)
+    ASK = 0x48,      // Display choice dialog
+    MENU = 0x49,     // Open menu
+    MENU2 = 0x4A,    // Open menu (alternate)
+    WINDOW = 0x50,   // Initialize window
+    // Additional opcodes to be added...
+}
+
+/** Dialog reference found by analyzing script bytecode */
+export interface DialogReference {
+    dialogId: number;
+    windowId: number;
+    entityIndex: number;
+    entityName: string;
+    scriptIndex: number;
+    offset: number;  // Offset within script data
+}
+
+/**
+ * FF7 Field Script opcode lengths (includes opcode byte + parameters)
+ * Index is the opcode value, value is the total instruction length
+ */
+const OPCODE_LENGTHS: number[] = [
+    /* 00 RET      */ 1,  /* 01 REQ      */ 3,  /* 02 REQSW    */ 3,  /* 03 REQEW    */ 3,
+    /* 04 PREQ     */ 3,  /* 05 PRQSW    */ 3,  /* 06 PRQEW    */ 3,  /* 07 RETTO    */ 2,
+    /* 08 JOIN     */ 2,  /* 09 SPLIT    */ 15, /* 0a SPTYE    */ 6,  /* 0b GTPYE    */ 6,
+    /* 0c          */ 1,  /* 0d          */ 1,  /* 0e DSKCG    */ 2,  /* 0f SPECIAL  */ 2,
+    /* 10 JMPF     */ 2,  /* 11 JMPFL    */ 3,  /* 12 JMPB     */ 2,  /* 13 JMPBL    */ 3,
+    /* 14 IFUB     */ 6,  /* 15 IFUBL    */ 7,  /* 16 IFSW     */ 8,  /* 17 IFSWL    */ 9,
+    /* 18 IFUW     */ 8,  /* 19 IFUWL    */ 9,  /* 1a          */ 10, /* 1b          */ 3,
+    /* 1c          */ 6,  /* 1d          */ 1,  /* 1e          */ 1,  /* 1f          */ 1,
+    /* 20 MINIGAME */ 11, /* 21 TUTOR    */ 2,  /* 22 BTMD2    */ 5,  /* 23 BTRLD    */ 3,
+    /* 24 WAIT     */ 3,  /* 25 NFADE    */ 9,  /* 26 BLINK    */ 2,  /* 27 BGMOVIE  */ 2,
+    /* 28 KAWAI    */ 3,  /* 29 KAWIW    */ 1,  /* 2a PMOVA    */ 2,  /* 2b SLIP     */ 2,
+    /* 2c BGPDH    */ 5,  /* 2d BGSCR    */ 7,  /* 2e WCLS     */ 2,  /* 2f WSIZW    */ 10,
+    /* 30 IFKEY    */ 4,  /* 31 IFKEYON  */ 4,  /* 32 IFKEYOFF */ 4,  /* 33 UC       */ 2,
+    /* 34 PDIRA    */ 2,  /* 35 PTURA    */ 4,  /* 36 WSPCL    */ 5,  /* 37 WNUMB    */ 8,
+    /* 38 STTIM    */ 6,  /* 39 GOLDu    */ 6,  /* 3a GOLDd    */ 6,  /* 3b CHGLD    */ 4,
+    /* 3c HMPMAX1  */ 1,  /* 3d HMPMAX2  */ 1,  /* 3e MHMMX    */ 1,  /* 3f HMPMAX3  */ 1,
+    /* 40 MESSAGE  */ 3,  /* 41 MPARA    */ 5,  /* 42 MPRA2    */ 6,  /* 43 MPNAM    */ 2,
+    /* 44          */ 1,  /* 45 MPu      */ 5,  /* 46          */ 1,  /* 47 MPd      */ 5,
+    /* 48 ASK      */ 7,  /* 49 MENU     */ 4,  /* 4a MENU2    */ 2,  /* 4b BTLTB    */ 2,
+    /* 4c          */ 1,  /* 4d HPu      */ 5,  /* 4e          */ 1,  /* 4f HPd      */ 5,
+    /* 50 WINDOW   */ 10, /* 51 WMOVE    */ 6,  /* 52 WMODE    */ 4,  /* 53 WREST    */ 2,
+    /* 54 WCLSE    */ 2,  /* 55 WROW     */ 3,  /* 56 GWCOL    */ 7,  /* 57 SWCOL    */ 7,
+    /* 58 STITM    */ 5,  /* 59 DLITM    */ 5,  /* 5a CKITM    */ 5,  /* 5b SMTRA    */ 7,
+    /* 5c DMTRA    */ 8,  /* 5d CMTRA    */ 10, /* 5e SHAKE    */ 8,  /* 5f NOP      */ 1,
+    /* 60 MAPJUMP  */ 10, /* 61 SCRLO    */ 2,  /* 62 SCRLC    */ 5,  /* 63 SCRLA    */ 6,
+    /* 64 SCR2D    */ 6,  /* 65 SCRCC    */ 1,  /* 66 SCR2DC   */ 9,  /* 67 SCRLW    */ 1,
+    /* 68 SCR2DL   */ 9,  /* 69 MPDSP    */ 2,  /* 6a VWOFT    */ 7,  /* 6b FADE     */ 9,
+    /* 6c FADEW    */ 1,  /* 6d IDLCK    */ 4,  /* 6e LSTMP    */ 3,  /* 6f SCRLP    */ 6,
+    /* 70 BATTLE   */ 4,  /* 71 BTLON    */ 2,  /* 72 BTLMD    */ 3,  /* 73 PGTDR    */ 4,
+    /* 74 GETPC    */ 4,  /* 75 PXYZI    */ 8,  /* 76 PLUS!    */ 4,  /* 77 PLUS2!   */ 5,
+    /* 78 MINUS!   */ 4,  /* 79 MINUS2!  */ 5,  /* 7a INC!     */ 3,  /* 7b INC2!    */ 3,
+    /* 7c DEC!     */ 3,  /* 7d DEC2!    */ 3,  /* 7e TLKON    */ 2,  /* 7f RDMSD    */ 3,
+    /* 80 SETBYTE  */ 4,  /* 81 SETWORD  */ 5,  /* 82 BITON    */ 4,  /* 83 BITOFF   */ 4,
+    /* 84 BITXOR   */ 4,  /* 85 PLUS     */ 4,  /* 86 PLUS2    */ 5,  /* 87 MINUS    */ 4,
+    /* 88 MINUS2   */ 5,  /* 89 MUL      */ 4,  /* 8a MUL2     */ 5,  /* 8b DIV      */ 4,
+    /* 8c DIV2     */ 5,  /* 8d MOD      */ 4,  /* 8e MOD2     */ 5,  /* 8f AND      */ 4,
+    /* 90 AND2     */ 5,  /* 91 OR       */ 4,  /* 92 OR2      */ 5,  /* 93 XOR      */ 4,
+    /* 94 XOR2     */ 5,  /* 95 INC      */ 3,  /* 96 INC2     */ 3,  /* 97 DEC      */ 3,
+    /* 98 DEC2     */ 3,  /* 99 RANDOM   */ 3,  /* 9a LBYTE    */ 4,  /* 9b HBYTE    */ 5,
+    /* 9c 2BYTE    */ 6,  /* 9d SETX     */ 7,  /* 9e GETX     */ 7,  /* 9f SEARCHX  */ 11,
+    /* a0 PC       */ 2,  /* a1 CHAR     */ 2,  /* a2 DFANM    */ 3,  /* a3 ANIME1   */ 3,
+    /* a4 VISI     */ 2,  /* a5 XYZI     */ 11, /* a6 XYI      */ 9,  /* a7 XYZ      */ 9,
+    /* a8 MOVE     */ 6,  /* a9 CMOVE    */ 6,  /* aa MOVA     */ 2,  /* ab TURA     */ 4,
+    /* ac ANIMW    */ 1,  /* ad FMOVE    */ 6,  /* ae ANIME2   */ 3,  /* af ANIM!1   */ 3,
+    /* b0 CANIM1   */ 5,  /* b1 CANM!1   */ 5,  /* b2 MSPED    */ 4,  /* b3 DIR      */ 3,
+    /* b4 TURNGEN  */ 6,  /* b5 TURN     */ 6,  /* b6 DIRA     */ 2,  /* b7 GETDIR   */ 4,
+    /* b8 GETAXY   */ 5,  /* b9 GETAI    */ 4,  /* ba ANIM!2   */ 3,  /* bb CANIM2   */ 5,
+    /* bc CANM!2   */ 5,  /* bd ASPED    */ 4,  /* be          */ 1,  /* bf CC       */ 2,
+    /* c0 JUMP     */ 11, /* c1 AXYZI    */ 8,  /* c2 LADER    */ 15, /* c3 OFST     */ 12,
+    /* c4 OFSTW    */ 1,  /* c5 TALKR    */ 3,  /* c6 SLIDR    */ 3,  /* c7 SOLID    */ 2,
+    /* c8 PRTYP    */ 2,  /* c9 PRTYM    */ 2,  /* ca PRTYE    */ 4,  /* cb IFPRTYQ  */ 3,
+    /* cc IFMEMBQ  */ 3,  /* cd MMBud    */ 3,  /* ce MMBLK    */ 2,  /* cf MMBUK    */ 2,
+    /* d0 LINE     */ 13, /* d1 LINON    */ 2,  /* d2 MPJPO    */ 2,  /* d3 SLINE    */ 16,
+    /* d4 SIN      */ 10, /* d5 COS      */ 10, /* d6 TLKR2    */ 4,  /* d7 SLDR2    */ 4,
+    /* d8 PMJMP    */ 3,  /* d9 PMJMP2   */ 1,  /* da AKAO2    */ 15, /* db FCFIX    */ 2,
+    /* dc CCANM    */ 4,  /* dd ANIMB    */ 1,  /* de TURNW    */ 1,  /* df MPPAL    */ 11,
+    /* e0 BGON     */ 4,  /* e1 BGOFF    */ 4,  /* e2 BGROL    */ 3,  /* e3 BGROL2   */ 3,
+    /* e4 BGCLR    */ 3,  /* e5 STPAL    */ 5,  /* e6 LDPAL    */ 5,  /* e7 CPPAL    */ 5,
+    /* e8 RTPAL    */ 7,  /* e9 ADPAL    */ 10, /* ea MPPAL2   */ 10, /* eb STPLS    */ 5,
+    /* ec LDPLS    */ 5,  /* ed CPPAL2   */ 8,  /* ee RTPAL2   */ 8,  /* ef ADPAL2   */ 11,
+    /* f0 MUSIC    */ 2,  /* f1 SOUND    */ 5,  /* f2 AKAO     */ 14, /* f3 MUSVT    */ 2,
+    /* f4 MUSVM    */ 2,  /* f5 MULCK    */ 2,  /* f6 BMUSC    */ 2,  /* f7 CHMPH    */ 4,
+    /* f8 PMVIE    */ 2,  /* f9 MOVIE    */ 1,  /* fa MVIEF    */ 3,  /* fb MVCAM    */ 2,
+    /* fc FMUSC    */ 2,  /* fd CMUSC    */ 8,  /* fe CHMST    */ 3,  /* ff GAMEOVER */ 1,
+];
+
+/** Background state initialization from BGON opcode */
+export interface InitialParamState {
+    param: number;       // Background area ID (A parameter)
+    stateBit: number;    // Layer/state bit to turn on (L parameter)
+    entityIndex: number; // Which entity's Init script contained this
+    entityName: string;
+}
+
+/**
+ * Analyze Init scripts to find BGON opcodes that set initial background states.
+ * BGON opcode (0xE0): 4 bytes - opcode, B1/B2, A, L
+ * Only considers opcodes where B1/B2 == 0x00 (literal values).
+ *
+ * @param scriptSection Parsed script section
+ * @returns Map of param ID -> bitmask of state bits that should be initially enabled
+ */
+export function findInitialParamStates(scriptSection: ScriptSection): Map<number, number> {
+    const paramStates = new Map<number, number>();
+    const { scriptData, scriptDataOffset, entities } = scriptSection;
+
+    // For each entity, parse its Init script (script slot 0)
+    for (let entityIdx = 0; entityIdx < entities.length; entityIdx++) {
+        const entity = entities[entityIdx];
+        const initScriptOffset = entity.scripts[0]; // Slot 0 = Init script
+
+        // Get unique script offsets with their indices to determine boundaries
+        const sortedOffsets = [...new Set(entity.scripts)].sort((a, b) => a - b);
+        const initOffsetIndex = sortedOffsets.indexOf(initScriptOffset);
+
+        // End is next different script's start, or end of script data
+        const endOffset = initOffsetIndex + 1 < sortedOffsets.length
+            ? sortedOffsets[initOffsetIndex + 1]
+            : scriptDataOffset + scriptData.length;
+
+        // Convert to relative offsets within scriptData
+        const relStart = initScriptOffset - scriptDataOffset;
+        const relEnd = endOffset - scriptDataOffset;
+
+        if (relStart < 0 || relStart >= scriptData.length) continue;
+        if (relEnd < relStart || relEnd > scriptData.length) continue;
+
+        // Parse opcodes properly
+        let pos = relStart;
+        while (pos < relEnd) {
+            const opcode = scriptData[pos];
+            const length = OPCODE_LENGTHS[opcode] ?? 1;
+
+            // Check for BGON: 0xE0 B1/B2 A L
+            if (opcode === 0xE0 && pos + 3 < scriptData.length) {
+                const banks = scriptData[pos + 1];  // B1 (high nibble) / B2 (low nibble)
+                const paramA = scriptData[pos + 2]; // Area ID
+                const stateL = scriptData[pos + 3]; // Layer/state bit
+
+                // Only use literal values (B1 == 0 and B2 == 0)
+                if (banks === 0x00) {
+                    // Set the state bit for this param
+                    const currentMask = paramStates.get(paramA) || 0;
+                    paramStates.set(paramA, currentMask | (1 << stateL));
+                }
+            }
+
+            // Move to next opcode
+            pos += length;
+
+            // Safety: if RET opcode, this script is done
+            if (opcode === 0x00) break;
+        }
+    }
+
+    return paramStates;
+}
+
+/**
+ * Analyze script bytecode to find all MESSAGE/ASK opcode references
+ * Uses proper opcode parsing with instruction lengths to avoid false positives
+ * @param scriptSection Parsed script section
+ * @returns Array of dialog references found in scripts
+ */
+export function findDialogReferences(scriptSection: ScriptSection): DialogReference[] {
+    const refs: DialogReference[] = [];
+    const { scriptData, scriptDataOffset, entities } = scriptSection;
+
+    // For each entity, parse its scripts properly using opcode lengths
+    for (let entityIdx = 0; entityIdx < entities.length; entityIdx++) {
+        const entity = entities[entityIdx];
+
+        // Get unique script offsets with their indices
+        const scriptOffsetMap = new Map<number, number[]>();
+        entity.scripts.forEach((offset, idx) => {
+            if (!scriptOffsetMap.has(offset)) {
+                scriptOffsetMap.set(offset, []);
+            }
+            scriptOffsetMap.get(offset)!.push(idx);
+        });
+
+        // Sort offsets to determine script boundaries
+        const sortedOffsets = [...scriptOffsetMap.keys()].sort((a, b) => a - b);
+
+        for (let i = 0; i < sortedOffsets.length; i++) {
+            const startOffset = sortedOffsets[i];
+            const scriptIndices = scriptOffsetMap.get(startOffset)!;
+
+            // End is next script's start, or end of script data
+            const endOffset = i + 1 < sortedOffsets.length
+                ? sortedOffsets[i + 1]
+                : scriptDataOffset + scriptData.length;
+
+            // Convert to relative offsets within scriptData
+            const relStart = startOffset - scriptDataOffset;
+            const relEnd = endOffset - scriptDataOffset;
+
+            if (relStart < 0 || relStart >= scriptData.length) continue;
+            if (relEnd < relStart || relEnd > scriptData.length) continue;
+
+            // Parse opcodes properly
+            let pos = relStart;
+            while (pos < relEnd) {
+                const opcode = scriptData[pos];
+                const length = OPCODE_LENGTHS[opcode] ?? 1;
+
+                // Check for MESSAGE: 0x40 WindowId DialogId
+                if (opcode === 0x40 && pos + 2 < scriptData.length) {
+                    const windowId = scriptData[pos + 1];
+                    const dialogId = scriptData[pos + 2];
+                    // Use first script index that points to this offset
+                    const scriptIdx = scriptIndices[0];
+                    refs.push({
+                        dialogId,
+                        windowId,
+                        entityIndex: entityIdx,
+                        entityName: entity.name,
+                        scriptIndex: scriptIdx,
+                        offset: scriptDataOffset + pos,
+                    });
+                }
+                // Check for ASK: 0x48 Bank1 Bank2 WindowId DialogId FirstLine LastLine
+                else if (opcode === 0x48 && pos + 6 < scriptData.length) {
+                    const windowId = scriptData[pos + 3];
+                    const dialogId = scriptData[pos + 4];
+                    const scriptIdx = scriptIndices[0];
+                    refs.push({
+                        dialogId,
+                        windowId,
+                        entityIndex: entityIdx,
+                        entityName: entity.name,
+                        scriptIndex: scriptIdx,
+                        offset: scriptDataOffset + pos,
+                    });
+                }
+
+                // Move to next opcode
+                pos += length;
+
+                // Safety: if RET opcode, this script is done
+                if (opcode === 0x00) break;
+            }
+        }
+    }
+
+    return refs;
+}
+
+// ============================================================================
 // Camera Section (Section 2) Types
 // ============================================================================
 
@@ -257,6 +561,124 @@ export function pcColorToRGBA(color16: number): PaletteColor {
     const b = (b5 << 3) | (b5 >> 2);
 
     return { r, g, b, a: 255 };
+}
+
+// ============================================================================
+// Script Section Parser (Section 1)
+// ============================================================================
+
+/**
+ * Read null-terminated string from buffer (up to maxLength bytes)
+ */
+function readFixedString(data: Uint8Array, offset: number, maxLength: number): string {
+    let end = offset;
+    while (end < offset + maxLength && data[end] !== 0) {
+        end++;
+    }
+    // Decode as ASCII/Latin-1
+    let str = '';
+    for (let i = offset; i < end; i++) {
+        str += String.fromCharCode(data[i]);
+    }
+    return str;
+}
+
+export function parseScriptSection(data: Uint8Array): ScriptSection {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+
+    // Parse fixed header (0x00 - 0x1F = 32 bytes)
+    const version = view.getUint16(0x00, true);
+    const entityCount = view.getUint8(0x02);
+    const modelCount = view.getUint8(0x03);
+    const dialogOffset = view.getUint16(0x04, true);
+    const akaoBlockCount = view.getUint16(0x06, true);
+    const scale = view.getUint16(0x08, true);
+    // 0x0A - 0x0F: 6 bytes blank/padding
+    const creator = readFixedString(data, 0x10, 8);
+    const name = readFixedString(data, 0x18, 8);
+
+    const header: ScriptHeader = {
+        version,
+        entityCount,
+        modelCount,
+        dialogOffset,
+        akaoBlockCount,
+        scale,
+        creator,
+        name,
+    };
+
+    // Variable-length data starts at 0x20
+    let offset = 0x20;
+
+    // Read entity names (8 bytes each)
+    const entityNames: string[] = [];
+    for (let i = 0; i < entityCount; i++) {
+        entityNames.push(readFixedString(data, offset, 8));
+        offset += 8;
+    }
+
+    // Read Akao/tuto block offsets (4 bytes each)
+    const akaoOffsets: number[] = [];
+    for (let i = 0; i < akaoBlockCount; i++) {
+        akaoOffsets.push(view.getUint32(offset, true));
+        offset += 4;
+    }
+
+    // Read entity script entry points (32 scripts × 2 bytes = 64 bytes per entity)
+    const entities: ScriptEntity[] = [];
+    for (let i = 0; i < entityCount; i++) {
+        const scripts: number[] = [];
+        for (let j = 0; j < 32; j++) {
+            scripts.push(view.getUint16(offset, true));
+            offset += 2;
+        }
+        entities.push({
+            name: entityNames[i],
+            scripts,
+        });
+    }
+
+    // Script bytecode starts immediately after entity script tables
+    const scriptDataOffset = offset;
+
+    // Parse dialog subsection
+    const dialogs: ScriptDialog[] = [];
+    if (dialogOffset > 0 && dialogOffset < data.length) {
+        const dialogCount = view.getUint16(dialogOffset, true);
+        const dialogTableOffset = dialogOffset + 2;
+
+        for (let i = 0; i < dialogCount; i++) {
+            // Pointers are relative to the dialog table start (dialogOffset)
+            const relativeOffset = view.getUint16(dialogTableOffset + i * 2, true);
+            const absoluteOffset = dialogOffset + relativeOffset;
+
+            // Find end of dialog (0xFF terminator)
+            let endOffset = absoluteOffset;
+            while (endOffset < data.length && data[endOffset] !== 0xFF) {
+                endOffset++;
+            }
+
+            dialogs.push({
+                index: i,
+                offset: absoluteOffset,
+                text: data.slice(absoluteOffset, endOffset + 1), // Include 0xFF terminator
+            });
+        }
+    }
+
+    // Extract script bytecode (from scriptDataOffset to dialogOffset, or end if no dialogs)
+    const scriptDataEnd = dialogOffset > 0 ? dialogOffset : data.length;
+    const scriptData = data.slice(scriptDataOffset, scriptDataEnd);
+
+    return {
+        header,
+        entities,
+        akaoOffsets,
+        dialogs,
+        scriptData,
+        scriptDataOffset,
+    };
 }
 
 // ============================================================================
@@ -763,6 +1185,7 @@ export class FieldFile {
     rawData: Uint8Array;  // Decompressed data for section access
 
     // Cached parsed sections (lazy loading)
+    private _scriptSection: ScriptSection | null = null;
     private _cameraSection: CameraSection | null = null;
     private _paletteSection: PaletteSection | null = null;
     private _backgroundSection: BackgroundSection | null = null;
@@ -840,6 +1263,14 @@ export class FieldFile {
     getSectionData(sectionName: keyof FieldData['sections']): Uint8Array {
         const section = this.data.sections[sectionName];
         return this.rawData.slice(section.dataOffset, section.dataOffset + section.length);
+    }
+
+    /** Get parsed script section (lazy loaded) */
+    getScriptSection(): ScriptSection {
+        if (!this._scriptSection) {
+            this._scriptSection = parseScriptSection(this.getSectionData('script'));
+        }
+        return this._scriptSection;
     }
 
     /** Get parsed camera section (lazy loaded) */

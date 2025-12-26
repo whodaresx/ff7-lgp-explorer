@@ -7,11 +7,17 @@ import { PFile } from '../pfile.ts';
 import { FieldAnimation } from '../animfile.ts';
 import { TexFile } from '../texfile.ts';
 import { createMeshFromPFile, fitCameraToObject } from '../utils/pfileRenderer.js';
+import { usePersistedState } from '../utils/settings.ts';
+import { BackgroundColorPicker } from './BackgroundColorPicker.jsx';
 import modelAnimations from '../assets/model-animations.json';
 import './SkeletonPreview.css';
 
 export function HRCPreview({ data, filename, onLoadFile }) {
     const containerRef = useRef(null);
+    const sceneRef = useRef(null);
+
+    // Background color
+    const [backgroundColor, setBackgroundColor] = usePersistedState('backgroundColor');
 
     // Animation playback state
     const [isPlaying, setIsPlaying] = useState(false);
@@ -122,7 +128,8 @@ export function HRCPreview({ data, filename, onLoadFile }) {
 
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000);
+        scene.background = new THREE.Color(backgroundColor);
+        sceneRef.current = scene;
 
         // Camera
         const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 10000);
@@ -414,6 +421,13 @@ export function HRCPreview({ data, filename, onLoadFile }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hrc, onLoadFile, filename, loadedAnimations]);
 
+    // Update background color
+    useEffect(() => {
+        if (sceneRef.current) {
+            sceneRef.current.background = new THREE.Color(backgroundColor);
+        }
+    }, [backgroundColor]);
+
     if (error) {
         return (
             <div className="skeleton-error">
@@ -477,6 +491,10 @@ export function HRCPreview({ data, filename, onLoadFile }) {
                         <div className="skeleton-stat">
                             <span className="stat-label">With Models</span>
                             <span className="stat-value">{stats?.bonesWithModels || 0}</span>
+                        </div>
+                        <div className="skeleton-stat">
+                            <span className="stat-label">Background</span>
+                            <BackgroundColorPicker value={backgroundColor} onChange={setBackgroundColor} />
                         </div>
                     </div>
 

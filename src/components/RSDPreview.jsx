@@ -6,6 +6,7 @@ import { PFile } from '../pfile.ts';
 import { TexFile } from '../texfile.ts';
 import { createMeshFromPFile, fitCameraToObject } from '../utils/pfileRenderer.js';
 import { usePersistedState } from '../utils/settings.ts';
+import { BackgroundColorPicker } from './BackgroundColorPicker.jsx';
 import './RSDPreview.css';
 
 export function RSDPreview({ data, onLoadFile }) {
@@ -17,6 +18,7 @@ export function RSDPreview({ data, onLoadFile }) {
     const [vertexColors, setVertexColors] = usePersistedState('vertexColors');
     const [smoothShading, setSmoothShading] = usePersistedState('smoothShading');
     const [cullingEnabled, setCullingEnabled] = useState(false);
+    const [backgroundColor, setBackgroundColor] = usePersistedState('backgroundColor');
 
     // Parse the RSD file and load referenced P model and textures
     const { pfile, textures, stats, error } = useMemo(() => {
@@ -90,7 +92,7 @@ export function RSDPreview({ data, onLoadFile }) {
 
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000);
+        scene.background = new THREE.Color(backgroundColor);
         sceneRef.current = scene;
 
         // Camera
@@ -196,6 +198,13 @@ export function RSDPreview({ data, onLoadFile }) {
         }
     }, [wireframe]);
 
+    // Update background color
+    useEffect(() => {
+        if (sceneRef.current) {
+            sceneRef.current.background = new THREE.Color(backgroundColor);
+        }
+    }, [backgroundColor]);
+
     if (error) {
         return (
             <div className="rsd-error">
@@ -249,6 +258,7 @@ export function RSDPreview({ data, onLoadFile }) {
                         <span>{stats.texturesLoaded}/{stats.texturesTotal} tex</span>
                     </div>
                 )}
+                <BackgroundColorPicker value={backgroundColor} onChange={setBackgroundColor} />
             </div>
             <div className="rsd-canvas" ref={containerRef} />
         </div>

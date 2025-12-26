@@ -11,6 +11,7 @@ export interface Settings {
   vertexColors: boolean;
   smoothShading: boolean;
   viewMode: 'list' | 'hierarchy';
+  backgroundColor: string;
 }
 
 const DEFAULTS: Settings = {
@@ -22,6 +23,7 @@ const DEFAULTS: Settings = {
   vertexColors: true,
   smoothShading: true,
   viewMode: 'list',
+  backgroundColor: '#000000',
 };
 
 export function getSettings(): Settings {

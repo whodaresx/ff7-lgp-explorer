@@ -1,0 +1,34 @@
+.bg-color-picker {
+    position: relative;
+    display: inline-flex;
+}
+
+.bg-color-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 2px solid var(--border-color, #444);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s;
+}
+
+.bg-color-btn:hover {
+    border-color: var(--accent-color, #4a9eff);
+}
+
+.bg-color-icon {
+    font-size: 10px;
+    color: transparent;
+}
+
+.bg-color-input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+}

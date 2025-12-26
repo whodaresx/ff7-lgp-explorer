@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { PFile } from '../pfile.ts';
 import { createMeshFromPFile, fitCameraToObject } from '../utils/pfileRenderer.js';
 import { usePersistedState } from '../utils/settings.ts';
+import { BackgroundColorPicker } from './BackgroundColorPicker.jsx';
 import './PModelPreview.css';
 
 export function PModelPreview({ data }) {
@@ -15,6 +16,7 @@ export function PModelPreview({ data }) {
     const [vertexColors, setVertexColors] = usePersistedState('vertexColors');
     const [smoothShading, setSmoothShading] = usePersistedState('smoothShading');
     const [cullingEnabled, setCullingEnabled] = useState(false);
+    const [backgroundColor, setBackgroundColor] = usePersistedState('backgroundColor');
 
     // Parse the P file and compute stats
     const { pfile, stats, error } = useMemo(() => {
@@ -36,7 +38,7 @@ export function PModelPreview({ data }) {
 
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000);
+        scene.background = new THREE.Color(backgroundColor);
         sceneRef.current = scene;
 
         // Camera
@@ -138,6 +140,13 @@ export function PModelPreview({ data }) {
         }
     }, [wireframe]);
 
+    // Update background color
+    useEffect(() => {
+        if (sceneRef.current) {
+            sceneRef.current.background = new THREE.Color(backgroundColor);
+        }
+    }, [backgroundColor]);
+
     if (error) {
         return (
             <div className="pmodel-error">
@@ -190,6 +199,7 @@ export function PModelPreview({ data }) {
                         <span>{stats.groups} groups</span>
                     </div>
                 )}
+                <BackgroundColorPicker value={backgroundColor} onChange={setBackgroundColor} />
             </div>
             <div className="pmodel-canvas" ref={containerRef} />
         </div>

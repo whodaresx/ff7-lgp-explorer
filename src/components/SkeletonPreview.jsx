@@ -6,10 +6,13 @@ import { PFile } from '../pfile.ts';
 import { TexFile } from '../texfile.ts';
 import { BattleAnimationPack } from '../battleAnimFile.ts';
 import { createMeshFromPFile } from '../utils/pfileRenderer.js';
+import { usePersistedState } from '../utils/settings.ts';
+import { BackgroundColorPicker } from './BackgroundColorPicker.jsx';
 import './SkeletonPreview.css';
 
 export function SkeletonPreview({ data, filename, onLoadFile }) {
     const containerRef = useRef(null);
+    const sceneRef = useRef(null);
     const [loadedParts, setLoadedParts] = useState(null);
     const [loadedTextures, setLoadedTextures] = useState(null);
     const [loadedBoneModels, setLoadedBoneModels] = useState(null);
@@ -20,6 +23,7 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
     const [loadedDataKey, setLoadedDataKey] = useState(null);
     const [selectedWeaponIndex, setSelectedWeaponIndex] = useState(0);
     const [cullingEnabled, setCullingEnabled] = useState(true);
+    const [backgroundColor, setBackgroundColor] = usePersistedState('backgroundColor');
     const cameraStateRef = useRef(null);
 
     // Animation playback state
@@ -347,7 +351,8 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
 
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000);
+        scene.background = new THREE.Color(backgroundColor);
+        sceneRef.current = scene;
 
         // Camera
         const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100000);
@@ -558,6 +563,13 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [skeleton, filename, loadedParts, loadedTextures, loadedBoneModels, loadedWeaponModels, loadedAnimationPack, selectedWeaponIndex, cullingEnabled, loadedDataKey]);
 
+    // Update background color
+    useEffect(() => {
+        if (sceneRef.current) {
+            sceneRef.current.background = new THREE.Color(backgroundColor);
+        }
+    }, [backgroundColor]);
+
     if (error) {
         return (
             <div className="skeleton-error">
@@ -668,6 +680,10 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
                                     />
                                     <span>Face culling</span>
                                 </label>
+                            </div>
+                            <div className="skeleton-stat">
+                                <span className="stat-label">Background</span>
+                                <BackgroundColorPicker value={backgroundColor} onChange={setBackgroundColor} />
                             </div>
                         </div>
 
