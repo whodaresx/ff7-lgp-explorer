@@ -34,7 +34,7 @@ export const FileList = forwardRef(function FileList({
   sortDirection,
   onSort,
   viewMode = 'list',
-  onViewModeChange,
+  onViewModeChange: _onViewModeChange,
   expandedNodes,
   onToggleExpand,
   hierarchyLoading = false,

@@ -22,6 +22,41 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
     const [cullingEnabled, setCullingEnabled] = useState(true);
     const cameraStateRef = useRef(null);
 
+    // Animation playback state
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentFrame, setCurrentFrame] = useState(0);
+    const [selectedAnimIndex, setSelectedAnimIndex] = useState(0);
+    const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+
+    // Animation refs (avoid stale closures in animation loop)
+    const isPlayingRef = useRef(false);
+    const currentFrameRef = useRef(0);
+    const selectedAnimIndexRef = useRef(0);
+    const playbackSpeedRef = useRef(1.0);
+    const animationTimeRef = useRef(0);
+    const lastTimeRef = useRef(0);
+
+    // Scene refs for animation updates
+    const boneMeshesRef = useRef([]);
+    const skeletonGroupRef = useRef(null);
+    const weaponGroupRef = useRef(null);
+    const animationPackRef = useRef(null);
+    const bonesRef = useRef([]);
+
+    // Sync state to refs for animation loop
+    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+    useEffect(() => { currentFrameRef.current = currentFrame; }, [currentFrame]);
+    useEffect(() => { selectedAnimIndexRef.current = selectedAnimIndex; }, [selectedAnimIndex]);
+    useEffect(() => { playbackSpeedRef.current = playbackSpeed; }, [playbackSpeed]);
+    useEffect(() => { animationPackRef.current = loadedAnimationPack; }, [loadedAnimationPack]);
+
+    // Track file changes to reset animation - use key pattern for clean reset
+    const fileKeyRef = useRef(filename);
+    if (fileKeyRef.current !== filename) {
+        fileKeyRef.current = filename;
+        // Reset will happen naturally when scene rebuilds with new file
+    }
+
     const { skeleton, stats, relatedFiles, isMagicFormat, magicBaseName, error } = useMemo(() => {
         try {
             const parsed = new SkeletonFile(data);
@@ -242,9 +277,10 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
                 animName = `${base}DA`;
             }
             const animData = onLoadFile(animName);
+            let animPack = null;
             if (animData) {
                 try {
-                    const animPack = new BattleAnimationPack(
+                    animPack = new BattleAnimationPack(
                         animData,
                         bones.length,
                         skeleton.model.header.nsSkeletonAnims,
@@ -259,6 +295,24 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
             const loadedCount = boneModels.filter(b => b.pfile).length;
             const weaponCount = weaponModels.filter(w => w.pfile).length;
             setLoadingStatus(`Loaded ${loadedCount} bone models, ${weaponCount} weapons, ${textures.filter(t => t).length} textures`);
+
+            // Reset animation state for new file
+            // Find first animation with frames (skip empty ones)
+            let initialAnimIndex = 0;
+            if (animPack) {
+                for (let i = 0; i < animPack.getAnimationCount(); i++) {
+                    if (animPack.getFrameCount(i) > 0) {
+                        initialAnimIndex = i;
+                        break;
+                    }
+                }
+            }
+            setCurrentFrame(0);
+            setIsPlaying(false);
+            setSelectedAnimIndex(initialAnimIndex);
+            animationTimeRef.current = 0;
+            currentFrameRef.current = 0;
+            selectedAnimIndexRef.current = initialAnimIndex;
 
             // Mark data as ready for this filename
             setLoadedDataKey(currentFilename);
@@ -358,22 +412,28 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
             locationContainer.updateMatrixWorld(true);
             boundingBox.setFromObject(locationContainer);
         } else if (hasBones && loadedBoneModels) {
-            // Render character/enemy skeleton with actual 3D meshes
-            const result = renderBattleSkeleton(
+            // Build character/enemy skeleton scene graph with bone hierarchy
+            const result = buildBattleSkeletonScene(
                 skeleton.model.bones,
                 loadedBoneModels,
                 loadedTextures || [],
                 loadedAnimationPack,
                 loadedWeaponModels || [],
                 selectedWeaponIndex,
-                cullingEnabled
+                cullingEnabled,
+                selectedAnimIndex,
+                currentFrame
             );
 
-            result.meshes.forEach(mesh => {
-                scene.add(mesh);
-                meshesToDispose.push(mesh);
-            });
+            scene.add(result.modelContainer);
+            meshesToDispose.push(result.modelContainer);
             boundingBox = result.boundingBox;
+
+            // Store refs for animation updates
+            boneMeshesRef.current = result.boneMeshes;
+            skeletonGroupRef.current = result.skeletonGroup;
+            weaponGroupRef.current = result.weaponGroup;
+            bonesRef.current = skeleton.model.bones;
         }
 
         // Position model so feet are at y=0 and fit camera
@@ -391,14 +451,56 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
             }
         }
 
-        // Animation loop
+        // Animation loop with frame advancement
         let animationId;
-        const animate = () => {
+        lastTimeRef.current = performance.now();
+
+        const animate = (currentTime) => {
             animationId = requestAnimationFrame(animate);
+
+            // Animation playback logic (only for bone skeletons)
+            if (!isBattleLocation && isPlayingRef.current && animationPackRef.current) {
+                const deltaTime = currentTime - lastTimeRef.current;
+                lastTimeRef.current = currentTime;
+
+                // FF7 animations run at 15 FPS (66.67ms per frame)
+                const FRAME_DURATION = 1000 / 15;
+                animationTimeRef.current += deltaTime * playbackSpeedRef.current;
+
+                const animPack = animationPackRef.current;
+                const frameCount = animPack.getFrameCount(selectedAnimIndexRef.current);
+
+                if (frameCount > 0) {
+                    // Calculate current frame (loop)
+                    const frameFloat = animationTimeRef.current / FRAME_DURATION;
+                    const frameIndex = Math.floor(frameFloat) % frameCount;
+
+                    if (frameIndex !== currentFrameRef.current) {
+                        currentFrameRef.current = frameIndex;
+                        setCurrentFrame(frameIndex);
+
+                        // Get frames and apply transforms
+                        const frame = animPack.getFrame(selectedAnimIndexRef.current, frameIndex);
+                        const weaponFrame = animPack.getWeaponFrame(selectedAnimIndexRef.current, frameIndex);
+
+                        applyFrameToMeshes(
+                            frame,
+                            boneMeshesRef.current,
+                            skeletonGroupRef.current,
+                            bonesRef.current,
+                            weaponFrame,
+                            weaponGroupRef.current
+                        );
+                    }
+                }
+            } else {
+                lastTimeRef.current = currentTime;
+            }
+
             controls.update();
             renderer.render(scene, camera);
         };
-        animate();
+        animate(performance.now());
 
         // Handle resize
         const handleResize = () => {
@@ -450,6 +552,10 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
                 container.removeChild(renderer.domElement);
             }
         };
+        // Note: currentFrame and selectedAnimIndex are intentionally excluded from deps
+        // - Scene should NOT rebuild on frame changes (transforms are updated in animation loop)
+        // - Animation index changes are handled by resetting frame in onChange handler
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [skeleton, filename, loadedParts, loadedTextures, loadedBoneModels, loadedWeaponModels, loadedAnimationPack, selectedWeaponIndex, cullingEnabled, loadedDataKey]);
 
     if (error) {
@@ -464,6 +570,27 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
 
     const hasBones = skeleton && skeleton.model.bones.length > 0;
     const isBattleLocation = skeleton && skeleton.model.isBattleLocation;
+
+    // Helper function to apply a specific frame (for manual scrubbing)
+    const applyFrame = (frameIndex) => {
+        if (!loadedAnimationPack || !boneMeshesRef.current.length) return;
+
+        const frame = loadedAnimationPack.getFrame(selectedAnimIndex, frameIndex);
+        const weaponFrame = loadedAnimationPack.getWeaponFrame(selectedAnimIndex, frameIndex);
+
+        applyFrameToMeshes(
+            frame,
+            boneMeshesRef.current,
+            skeletonGroupRef.current,
+            bonesRef.current,
+            weaponFrame,
+            weaponGroupRef.current
+        );
+    };
+
+    // Get frame count for current animation
+    const frameCount = loadedAnimationPack?.getFrameCount(selectedAnimIndex) || 0;
+    const animationCount = loadedAnimationPack?.getAnimationCount() || 0;
     // Only show canvas when loaded data matches current filename (applies to both battle locations and characters)
     const dataReadyForCurrentFile = loadedDataKey === filename;
     const showCanvas = dataReadyForCurrentFile && (
@@ -578,6 +705,157 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
                                     )}
                                 </>
                             )}
+
+                            {/* Animation Playback Controls */}
+                            {loadedAnimationPack && frameCount > 0 && (
+                                <div className="animation-controls">
+                                    {/* Animation selector (if multiple animations) */}
+                                    {animationCount > 1 && (
+                                        <div className="skeleton-stat animation-selector">
+                                            <span className="stat-label">Animation</span>
+                                            <div className="animation-nav">
+                                                <button
+                                                    className="playback-btn"
+                                                    onClick={() => {
+                                                        // Find previous animation with frames
+                                                        let newIndex = selectedAnimIndex - 1;
+                                                        while (newIndex >= 0 && loadedAnimationPack.getFrameCount(newIndex) === 0) {
+                                                            newIndex--;
+                                                        }
+                                                        if (newIndex < 0) {
+                                                            // Wrap to last valid animation
+                                                            newIndex = animationCount - 1;
+                                                            while (newIndex > selectedAnimIndex && loadedAnimationPack.getFrameCount(newIndex) === 0) {
+                                                                newIndex--;
+                                                            }
+                                                        }
+                                                        if (newIndex !== selectedAnimIndex && loadedAnimationPack.getFrameCount(newIndex) > 0) {
+                                                            setSelectedAnimIndex(newIndex);
+                                                            setCurrentFrame(0);
+                                                            animationTimeRef.current = 0;
+                                                            const frame = loadedAnimationPack.getFrame(newIndex, 0);
+                                                            const weaponFrame = loadedAnimationPack.getWeaponFrame(newIndex, 0);
+                                                            applyFrameToMeshes(frame, boneMeshesRef.current, skeletonGroupRef.current, bonesRef.current, weaponFrame, weaponGroupRef.current);
+                                                        }
+                                                    }}
+                                                    title="Previous animation"
+                                                >
+                                                    «
+                                                </button>
+                                                <select
+                                                    value={selectedAnimIndex}
+                                                    onChange={(e) => {
+                                                        const newIndex = Number(e.target.value);
+                                                        setSelectedAnimIndex(newIndex);
+                                                        setCurrentFrame(0);
+                                                        animationTimeRef.current = 0;
+                                                        if (loadedAnimationPack && boneMeshesRef.current.length) {
+                                                            const frame = loadedAnimationPack.getFrame(newIndex, 0);
+                                                            const weaponFrame = loadedAnimationPack.getWeaponFrame(newIndex, 0);
+                                                            applyFrameToMeshes(frame, boneMeshesRef.current, skeletonGroupRef.current, bonesRef.current, weaponFrame, weaponGroupRef.current);
+                                                        }
+                                                    }}
+                                                    className="weapon-select"
+                                                >
+                                                    {Array.from({ length: animationCount }, (_, i) => {
+                                                        const frames = loadedAnimationPack.getFrameCount(i);
+                                                        return (
+                                                            <option key={i} value={i} disabled={frames === 0}>
+                                                                Anim {i + 1} ({frames} frames)
+                                                            </option>
+                                                        );
+                                                    })}
+                                                </select>
+                                                <button
+                                                    className="playback-btn"
+                                                    onClick={() => {
+                                                        // Find next animation with frames
+                                                        let newIndex = selectedAnimIndex + 1;
+                                                        while (newIndex < animationCount && loadedAnimationPack.getFrameCount(newIndex) === 0) {
+                                                            newIndex++;
+                                                        }
+                                                        if (newIndex >= animationCount) {
+                                                            // Wrap to first valid animation
+                                                            newIndex = 0;
+                                                            while (newIndex < selectedAnimIndex && loadedAnimationPack.getFrameCount(newIndex) === 0) {
+                                                                newIndex++;
+                                                            }
+                                                        }
+                                                        if (newIndex !== selectedAnimIndex && loadedAnimationPack.getFrameCount(newIndex) > 0) {
+                                                            setSelectedAnimIndex(newIndex);
+                                                            setCurrentFrame(0);
+                                                            animationTimeRef.current = 0;
+                                                            const frame = loadedAnimationPack.getFrame(newIndex, 0);
+                                                            const weaponFrame = loadedAnimationPack.getWeaponFrame(newIndex, 0);
+                                                            applyFrameToMeshes(frame, boneMeshesRef.current, skeletonGroupRef.current, bonesRef.current, weaponFrame, weaponGroupRef.current);
+                                                        }
+                                                    }}
+                                                    title="Next animation"
+                                                >
+                                                    »
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Playback controls */}
+                                    <div className="skeleton-stat playback-controls">
+                                        <button
+                                            className="playback-btn"
+                                            onClick={() => setIsPlaying(!isPlaying)}
+                                            title={isPlaying ? 'Pause' : 'Play'}
+                                        >
+                                            {isPlaying ? '⏸' : '▶'}
+                                        </button>
+                                        <button
+                                            className="playback-btn"
+                                            onClick={() => {
+                                                setCurrentFrame(0);
+                                                animationTimeRef.current = 0;
+                                                applyFrame(0);
+                                            }}
+                                            title="Reset"
+                                        >
+                                            ⏮
+                                        </button>
+                                        <span className="frame-counter">
+                                            {currentFrame + 1}/{frameCount}
+                                        </span>
+                                    </div>
+
+                                    {/* Frame slider */}
+                                    <div className="skeleton-stat frame-slider">
+                                        <input
+                                            type="range"
+                                            min={0}
+                                            max={frameCount - 1}
+                                            value={currentFrame}
+                                            onChange={(e) => {
+                                                const frame = Number(e.target.value);
+                                                setCurrentFrame(frame);
+                                                animationTimeRef.current = frame * (1000 / 15);
+                                                applyFrame(frame);
+                                            }}
+                                            className="frame-range"
+                                        />
+                                    </div>
+
+                                    {/* Speed control */}
+                                    <div className="skeleton-stat speed-control">
+                                        <span className="stat-label">Speed</span>
+                                        <select
+                                            value={playbackSpeed}
+                                            onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+                                            className="speed-select"
+                                        >
+                                            <option value={0.25}>0.25x</option>
+                                            <option value={0.5}>0.5x</option>
+                                            <option value={1}>1x</option>
+                                            <option value={2}>2x</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -657,21 +935,110 @@ function buildQuaternionYXZ(alpha, beta, gamma) {
     return result;
 }
 
-// Render battle skeleton with bone hierarchy and animation transforms
-function renderBattleSkeleton(bones, boneModels, textures, animationPack, weaponModels = [], selectedWeaponIndex = 0, cullingEnabled = true) {
-    const meshes = [];
-    const boundingBox = new THREE.Box3();
+// Apply animation frame using matrix stack algorithm (for animation playback)
+// This recomputes bone matrices and updates mesh transforms
+function applyFrameToMeshes(frame, boneMeshes, skeletonGroup, bones, weaponFrame, weaponGroup) {
+    if (!frame || !skeletonGroup || !boneMeshes.length) return;
 
-    // Get first animation frame if available
-    const frame = animationPack?.getFirstFrame();
-    // Get first weapon animation frame if available
-    const weaponFrame = animationPack?.getFirstWeaponFrame();
+    // Apply root position and rotation to skeleton group
+    // The modelContainer's scale flip (scale.y = -1, scale.z = -1) handles coordinate conversion
+    skeletonGroup.position.set(frame.startX, frame.startY, frame.startZ);
+
+    if (frame.bones.length > 0) {
+        const rootQuat = buildQuaternionYXZ(
+            frame.bones[0].alpha,
+            frame.bones[0].beta,
+            frame.bones[0].gamma
+        );
+        skeletonGroup.quaternion.copy(rootQuat);
+    }
+
+    // Bone rotation offset
+    const itmpbones = bones.length > 1 ? 1 : 0;
+
+    // Rebuild bone matrices using stack algorithm (same as buildBattleSkeletonScene)
+    const jointStack = [-1];
+    const matrixStack = [new THREE.Matrix4()];
+
+    // Create a map of bone index to computed matrix
+    const boneMatrices = new Map();
+
+    for (let boneIdx = 0; boneIdx < bones.length; boneIdx++) {
+        const bone = bones[boneIdx];
+
+        // Navigate hierarchy - pop until we find matching parent
+        while (jointStack.length > 1 && bone.parentBone !== jointStack[jointStack.length - 1]) {
+            jointStack.pop();
+            matrixStack.pop();
+        }
+
+        // Get current transform from parent
+        const currentMatrix = matrixStack[matrixStack.length - 1].clone();
+
+        // Apply bone rotation from animation
+        if (frame.bones[boneIdx + itmpbones]) {
+            const rot = frame.bones[boneIdx + itmpbones];
+            const boneQuat = buildQuaternionYXZ(rot.alpha, rot.beta, rot.gamma);
+            const rotMatrix = new THREE.Matrix4().makeRotationFromQuaternion(boneQuat);
+            currentMatrix.multiply(rotMatrix);
+        }
+
+        // Store matrix for this bone
+        boneMatrices.set(boneIdx, currentMatrix.clone());
+
+        // Translate along +Z by bone length for children
+        const translateMatrix = new THREE.Matrix4().makeTranslation(0, 0, bone.length);
+        currentMatrix.multiply(translateMatrix);
+
+        // Push for children
+        jointStack.push(boneIdx);
+        matrixStack.push(currentMatrix);
+    }
+
+    // Apply computed matrices to meshes
+    for (const { boneIndex, mesh } of boneMeshes) {
+        const matrix = boneMatrices.get(boneIndex);
+        if (matrix) {
+            // Reset mesh matrix and apply new one
+            mesh.matrix.identity();
+            mesh.applyMatrix4(matrix);
+        }
+    }
+
+    // Apply weapon transform
+    // Note: Weapon translation is NOT negated - it's authored in visual space to match the hand position
+    if (weaponGroup && weaponFrame && weaponFrame.bones.length > 0) {
+        weaponGroup.position.set(
+            weaponFrame.startX,
+            weaponFrame.startY,
+            weaponFrame.startZ
+        );
+        const weaponQuat = buildQuaternionYXZ(
+            weaponFrame.bones[0].alpha,
+            weaponFrame.bones[0].beta,
+            weaponFrame.bones[0].gamma
+        );
+        weaponGroup.quaternion.copy(weaponQuat);
+    }
+}
+
+// Build battle skeleton using matrix stack algorithm (matching original renderBattleSkeleton)
+// Returns mesh references for animation updates
+function buildBattleSkeletonScene(bones, boneModels, textures, animationPack, weaponModels = [], selectedWeaponIndex = 0, cullingEnabled = true, animIndex = 0, frameIndex = 0) {
+    const boundingBox = new THREE.Box3();
+    const boneMeshes = [];  // Store mesh references for animation
+
+    // Get animation frame
+    const frame = animationPack?.getFrame(animIndex, frameIndex);
+    const weaponFrame = animationPack?.getWeaponFrame(animIndex, frameIndex);
 
     // Create skeleton group with root transform
     const skeletonGroup = new THREE.Group();
+    skeletonGroup.name = 'skeleton';
 
     if (frame) {
         // Apply root translation
+        // The modelContainer's scale flip (scale.y = -1, scale.z = -1) handles coordinate conversion
         skeletonGroup.position.set(frame.startX, frame.startY, frame.startZ);
 
         // Apply root rotation (first bone rotation is root rotation)
@@ -723,7 +1090,11 @@ function renderBattleSkeleton(bones, boneModels, textures, animationPack, weapon
                 meshIndex: boneIdx,
             });
             meshGroup.applyMatrix4(currentMatrix);
+            meshGroup.matrixAutoUpdate = false;  // Disable auto-update so animation can manually control matrix
+            meshGroup.name = `mesh_${boneIdx}`;
+            meshGroup.userData.boneIndex = boneIdx;
             skeletonGroup.add(meshGroup);
+            boneMeshes.push({ boneIndex: boneIdx, mesh: meshGroup });
 
             // Expand bounding box
             const meshBox = new THREE.Box3().setFromObject(meshGroup);
@@ -745,32 +1116,32 @@ function renderBattleSkeleton(bones, boneModels, textures, animationPack, weapon
 
     // Container for the skeleton - flip Y to match coordinate system
     const modelContainer = new THREE.Group();
+    modelContainer.name = 'modelContainer';
     modelContainer.scale.y = -1;
     modelContainer.scale.z = -1;
     modelContainer.add(skeletonGroup);
 
-    // Render weapon if available (PC battle models like Cloud have weapons)
-    // Weapon is rendered INDEPENDENTLY from skeleton - it has its own world-space transforms
-    // (not as a child of skeletonGroup, but as a sibling inside modelContainer)
-    if (weaponModels.length > 0 && weaponFrame && weaponFrame.bones.length > 0) {
-        // Use selected weapon model
+    // Create weapon group
+    let weaponGroup = null;
+    if (weaponModels.length > 0) {
         const weaponModel = weaponModels[selectedWeaponIndex];
         if (weaponModel && weaponModel.pfile) {
-            const weaponGroup = new THREE.Group();
+            weaponGroup = new THREE.Group();
+            weaponGroup.name = 'weapon';
 
-            // Apply weapon frame position (world-space, like skeleton's root position)
-            weaponGroup.position.set(weaponFrame.startX, weaponFrame.startY, weaponFrame.startZ);
+            // Apply weapon frame transform
+            // Note: Weapon translation is NOT negated - it's authored in visual space to match the hand position
+            if (weaponFrame && weaponFrame.bones.length > 0) {
+                weaponGroup.position.set(weaponFrame.startX, weaponFrame.startY, weaponFrame.startZ);
+                const weaponQuat = buildQuaternionYXZ(
+                    weaponFrame.bones[0].alpha,
+                    weaponFrame.bones[0].beta,
+                    weaponFrame.bones[0].gamma
+                );
+                weaponGroup.quaternion.copy(weaponQuat);
+            }
 
-            // Apply weapon frame rotation using quaternion (matching Kimera's approach)
-            const weaponQuat = buildQuaternionYXZ(
-                weaponFrame.bones[0].alpha,
-                weaponFrame.bones[0].beta,
-                weaponFrame.bones[0].gamma
-            );
-            weaponGroup.quaternion.copy(weaponQuat);
-
-            // Create weapon mesh and add to weapon group
-            // Use high meshIndex (bones.length + 10) so weapon renders on top of body parts
+            // Create weapon mesh
             const weaponMesh = createMeshFromPFile(weaponModel.pfile, {
                 textures,
                 cullingEnabled,
@@ -778,29 +1149,28 @@ function renderBattleSkeleton(bones, boneModels, textures, animationPack, weapon
                 meshIndex: bones.length + 10,
             });
             weaponGroup.add(weaponMesh);
-
-            // Add weapon as sibling to skeletonGroup (both are children of modelContainer)
             modelContainer.add(weaponGroup);
         }
     }
 
-    // Compute actual world bounding box after all transforms (including skeletonGroup's position/rotation)
+    // Compute bounding box
     modelContainer.updateMatrixWorld(true);
     const worldBox = new THREE.Box3().setFromObject(modelContainer);
 
-    // Position model so feet (bottom after flip) are at y=0
+    // Position model so feet are at y=0
     if (!worldBox.isEmpty()) {
         modelContainer.position.y = -worldBox.min.y;
-
-        // Recompute final bounding box for camera fitting
         modelContainer.updateMatrixWorld(true);
-        const finalBox = new THREE.Box3().setFromObject(modelContainer);
-        meshes.push(modelContainer);
-        return { meshes, boundingBox: finalBox };
+        boundingBox.setFromObject(modelContainer);
     }
 
-    meshes.push(modelContainer);
-    return { meshes, boundingBox: new THREE.Box3() };
+    return {
+        modelContainer,
+        skeletonGroup,
+        boneMeshes,  // Changed from boneGroups - stores mesh references with bone indices
+        weaponGroup,
+        boundingBox,
+    };
 }
 
 function fitCameraToScene(camera, controls, boundingBox, isBattleLocation = false, groundPlaneBox = null) {

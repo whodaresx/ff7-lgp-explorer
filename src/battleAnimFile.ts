@@ -277,10 +277,36 @@ export class BattleAnimationPack {
     }
 
     getWeaponFrame(animIndex: number, frameIndex: number): BattleFrame | null {
-        if (animIndex < this.weaponAnimations.length && frameIndex < this.weaponAnimations[animIndex].frames.length) {
-            return this.weaponAnimations[animIndex].frames[frameIndex];
+        if (animIndex < this.weaponAnimations.length) {
+            const anim = this.weaponAnimations[animIndex];
+            if (anim.frames.length > 0) {
+                // Loop weapon frame if it has fewer frames than skeleton animation
+                const clampedFrame = frameIndex % anim.frames.length;
+                return anim.frames[clampedFrame];
+            }
         }
         return null;
+    }
+
+    // Get number of animations in the pack
+    getAnimationCount(): number {
+        return this.skeletonAnimations.length;
+    }
+
+    // Get frame count for a skeleton animation
+    getFrameCount(animIndex: number = 0): number {
+        if (animIndex < this.skeletonAnimations.length) {
+            return this.skeletonAnimations[animIndex].frames.length;
+        }
+        return 0;
+    }
+
+    // Get frame count for a weapon animation
+    getWeaponFrameCount(animIndex: number = 0): number {
+        if (animIndex < this.weaponAnimations.length) {
+            return this.weaponAnimations[animIndex].frames.length;
+        }
+        return 0;
     }
 }
 
@@ -330,8 +356,8 @@ function parseAnimation(view: DataView, startOffset: number, skeletonBones: numb
         const firstFrame = processUncompressedFrame(framesRawData, offsetBit, key, nBones);
         frames.push(firstFrame);
         
-        // Subsequent frames (compressed) - only parse first few for initial pose
-        for (let fi = 1; fi < Math.min(numFramesShort, 2); fi++) {
+        // Subsequent frames (compressed) - parse all frames for animation playback
+        for (let fi = 1; fi < numFramesShort; fi++) {
             const frame = processFrame(framesRawData, offsetBit, key, nBones, frames[fi - 1]);
             if (!frame) break;
             frames.push(frame);

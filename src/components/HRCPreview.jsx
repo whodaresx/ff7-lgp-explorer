@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { HRCFile } from '../hrcfile.ts';
@@ -13,6 +13,34 @@ import './SkeletonPreview.css';
 export function HRCPreview({ data, filename, onLoadFile }) {
     const containerRef = useRef(null);
 
+    // Animation playback state
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentFrame, setCurrentFrame] = useState(0);
+    const [selectedAnimIndex, setSelectedAnimIndex] = useState(0);
+    const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+    const [loadedAnimations, setLoadedAnimations] = useState([]);
+
+    // Animation refs (avoid stale closures in animation loop)
+    const isPlayingRef = useRef(false);
+    const currentFrameRef = useRef(0);
+    const selectedAnimIndexRef = useRef(0);
+    const playbackSpeedRef = useRef(1.0);
+    const animationTimeRef = useRef(0);
+    const lastTimeRef = useRef(0);
+
+    // Scene refs for animation updates
+    const boneMeshesRef = useRef([]);
+    const skeletonGroupRef = useRef(null);
+    const bonesRef = useRef([]);
+    const loadedAnimationsRef = useRef([]);
+
+    // Sync state to refs for animation loop
+    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+    useEffect(() => { currentFrameRef.current = currentFrame; }, [currentFrame]);
+    useEffect(() => { selectedAnimIndexRef.current = selectedAnimIndex; }, [selectedAnimIndex]);
+    useEffect(() => { playbackSpeedRef.current = playbackSpeed; }, [playbackSpeed]);
+    useEffect(() => { loadedAnimationsRef.current = loadedAnimations; }, [loadedAnimations]);
+
     const { hrc, stats, relatedFiles, error } = useMemo(() => {
         try {
             const parsed = new HRCFile(data);
@@ -26,6 +54,63 @@ export function HRCPreview({ data, filename, onLoadFile }) {
             return { hrc: null, stats: null, relatedFiles: [], error: err.message };
         }
     }, [data]);
+
+    // Load all available animations for this model
+    useEffect(() => {
+        if (!hrc || !onLoadFile) {
+            setLoadedAnimations([]);
+            return;
+        }
+
+        const modelCode = filename.toLowerCase().replace('.hrc', '');
+        const animList = modelAnimations[modelCode];
+
+        if (!animList || animList.length === 0) {
+            setLoadedAnimations([]);
+            return;
+        }
+
+        const animations = [];
+        for (const animCode of animList) {
+            const animFilename = `${animCode}.a`;
+            const animData = onLoadFile(animFilename);
+            if (animData) {
+                try {
+                    const anim = new FieldAnimation(animData);
+                    // Check if bone count matches
+                    if (anim.data.nBones === hrc.data.bones.length ||
+                        (hrc.data.bones.length === 1 && anim.data.nBones === 0)) {
+                        animations.push({
+                            name: animCode,
+                            animation: anim,
+                            frameCount: anim.data.nFrames,
+                        });
+                    }
+                } catch {
+                    // Not a valid animation file
+                }
+            }
+        }
+
+        setLoadedAnimations(animations);
+
+        // Find first animation with frames
+        let initialAnimIndex = 0;
+        for (let i = 0; i < animations.length; i++) {
+            if (animations[i].frameCount > 0) {
+                initialAnimIndex = i;
+                break;
+            }
+        }
+
+        // Reset animation state
+        setCurrentFrame(0);
+        setIsPlaying(false);
+        setSelectedAnimIndex(initialAnimIndex);
+        animationTimeRef.current = 0;
+        currentFrameRef.current = 0;
+        selectedAnimIndexRef.current = initialAnimIndex;
+    }, [hrc, filename, onLoadFile]);
 
     // Initialize Three.js scene and load models
     useEffect(() => {
@@ -47,7 +132,6 @@ export function HRCPreview({ data, filename, onLoadFile }) {
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(width, height);
         renderer.setPixelRatio(window.devicePixelRatio);
-        // Disable tone mapping and use legacy color handling for faithful FF7 colors
         renderer.toneMapping = THREE.NoToneMapping;
         renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
         container.appendChild(renderer.domElement);
@@ -61,22 +145,17 @@ export function HRCPreview({ data, filename, onLoadFile }) {
         const lightIntensity = 5;
 
         // FF7-style lighting setup
-        // Global ambient light - provides base illumination
         const ambientLight = new THREE.AmbientLight(0x888888, lightIntensity);
         scene.add(ambientLight);
 
-        // Three directional lights mimicking FF7 field lighting
-        // Light 1: Main light (brightest) - from front-above
         const light1 = new THREE.DirectionalLight(0x909090, lightIntensity);
         light1.position.set(-100, -2100, -3500).normalize();
         scene.add(light1);
 
-        // Light 2: Secondary light (medium) - from right-above-back
         const light2 = new THREE.DirectionalLight(0x888888, lightIntensity);
         light2.position.set(1500, -1400, 2900).normalize();
         scene.add(light2);
 
-        // Light 3: Fill light (dimmest) - from left-above-back
         const light3 = new THREE.DirectionalLight(0x4d4d4d, lightIntensity);
         light3.position.set(-3000, -1400, 2500).normalize();
         scene.add(light3);
@@ -85,60 +164,33 @@ export function HRCPreview({ data, filename, onLoadFile }) {
         const allMeshes = [];
         let cancelled = false;
 
-        // Try to find and load animation file using model-animations.json mapping
-        const findAnimation = () => {
-            console.log("Finding animation for", filename);
-            if (!onLoadFile) return null;
-
-            // Get the model code (e.g., "aaaa" from "aaaa.hrc")
-            const modelCode = filename.toLowerCase().replace('.hrc', '');
-            const animList = modelAnimations[modelCode];
-
-            if (!animList || animList.length === 0) return null;
-
-            // Try animations from the list in order
-            for (const animCode of animList) {
-                const animFilename = `${animCode}.a`;
-                const animData = onLoadFile(animFilename);
-                console.log("Trying animation", animFilename);
-                if (animData) {
-                    try {
-                        const anim = new FieldAnimation(animData);
-                        // Check if bone count matches (or special case for single bone)
-                        if (anim.data.nBones === hrc.data.bones.length ||
-                            (hrc.data.bones.length === 1 && anim.data.nBones === 0)) {
-                            console.log("Found animation", animFilename);
-                            return anim;
-                        }
-                    } catch {
-                        // Not a valid animation file, continue searching
-                        console.log("Not a valid animation file", animFilename);
-                    }
-                }
-            }
-            return null;
+        // Get current animation frame
+        const getCurrentFrame = () => {
+            if (loadedAnimations.length === 0) return null;
+            const animData = loadedAnimations[selectedAnimIndex];
+            if (!animData) return null;
+            return animData.animation.getFrame(currentFrame);
         };
 
         // Load and render actual models with animation transforms
         const loadModels = async () => {
             const bones = hrc.data.bones;
+            bonesRef.current = bones;
 
-            // Try to load animation
-            const animation = findAnimation();
-            const frame = animation?.getFirstFrame();
+            // Get initial frame
+            const frame = getCurrentFrame();
 
             // Create skeleton group with root transform
             const skeletonGroup = new THREE.Group();
+            skeletonGroupRef.current = skeletonGroup;
 
             if (frame) {
-                // Apply root translation
+                // The modelContainer's scale flip (scale.y = -1, scale.z = -1) handles coordinate conversion
                 skeletonGroup.position.set(
                     frame.rootTranslation.x,
                     frame.rootTranslation.y,
                     frame.rootTranslation.z
                 );
-
-                // Apply root rotation
                 const rootQuat = buildQuaternionYXZ(
                     frame.rootRotation.alpha,
                     frame.rootRotation.beta,
@@ -156,9 +208,10 @@ export function HRCPreview({ data, filename, onLoadFile }) {
             scene.add(modelContainer);
             allMeshes.push(modelContainer);
 
-            // Build joint hierarchy using a stack (matching Kimera's approach)
-            // Stack stores bone names (joint_i), we match parentName (joint_f) against stack top
-            // Initialize with first bone's parentName so the first bone can match
+            // Store bone meshes for animation
+            const boneMeshes = [];
+
+            // Build joint hierarchy using a stack
             const jointStack = [bones[0]?.parentName || 'root'];
             const matrixStack = [new THREE.Matrix4()];
 
@@ -167,9 +220,7 @@ export function HRCPreview({ data, filename, onLoadFile }) {
 
                 const bone = bones[idx];
 
-                // Navigate hierarchy - pop until we find matching parent (joint_f matches stack top)
-                // This handles branching: when we reach a bone whose parent isn't the previous bone,
-                // we pop back up the hierarchy until we find the right parent
+                // Navigate hierarchy - pop until we find matching parent
                 while (jointStack.length > 1 && bone.parentName !== jointStack[jointStack.length - 1]) {
                     jointStack.pop();
                     matrixStack.pop();
@@ -234,14 +285,16 @@ export function HRCPreview({ data, filename, onLoadFile }) {
                                     const pfile = new PFile(pData);
                                     const mesh = createMeshFromPFile(pfile, {
                                         textures,
-                                        cullingEnabled: false, // Disabled due to Y-flip on container
+                                        cullingEnabled: false,
                                     });
 
                                     // Apply accumulated transform
                                     mesh.applyMatrix4(currentMatrix);
+                                    mesh.matrixAutoUpdate = false;  // For animation updates
 
                                     skeletonGroup.add(mesh);
                                     allMeshes.push(mesh);
+                                    boneMeshes.push({ boneIndex: idx, mesh });
                                 }
                             } catch {
                                 console.warn(`Failed to load model for bone ${bone.name}`);
@@ -250,50 +303,82 @@ export function HRCPreview({ data, filename, onLoadFile }) {
                     }
                 }
 
-                // Translate along -Z by bone length for next bone in chain (matches FF7/Kimera)
+                // Translate along -Z by bone length for next bone
                 const translateMatrix = new THREE.Matrix4().makeTranslation(0, 0, -bone.length);
                 currentMatrix.multiply(translateMatrix);
 
-                // Push current bone's name onto stack (this is joint_i - the end of this bone)
-                // Child bones will match their parentName (joint_f) against this
+                // Push current bone's name onto stack
                 jointStack.push(bone.name);
                 matrixStack.push(currentMatrix);
             }
 
+            boneMeshesRef.current = boneMeshes;
+
             // If no models loaded, fall back to placeholder visualization
-            if (allMeshes.length <= 1) {
+            if (boneMeshes.length === 0) {
                 const placeholderGroup = createPlaceholderWithAnimation(hrc, frame);
                 skeletonGroup.add(placeholderGroup);
                 allMeshes.push(placeholderGroup);
             }
 
-            // Compute world bounding box after all transforms (including container's scale flip)
+            // Compute world bounding box after all transforms
             modelContainer.updateMatrixWorld(true);
             const worldBox = new THREE.Box3().setFromObject(modelContainer);
 
             // Position model so feet are at y=0 and fit camera
             if (!worldBox.isEmpty()) {
-                // Shift model so bottom (min.y) is at y=0
                 modelContainer.position.y = -worldBox.min.y;
-
-                // Recompute final bounding box after positioning
                 modelContainer.updateMatrixWorld(true);
                 const finalBox = new THREE.Box3().setFromObject(modelContainer);
-
                 fitCameraToObject(camera, controls, finalBox);
             }
         };
 
         loadModels();
 
-        // Animation loop
+        // Animation loop with frame advancement
         let animationId;
-        const animate = () => {
+        lastTimeRef.current = performance.now();
+
+        const animate = (currentTime) => {
             animationId = requestAnimationFrame(animate);
+
+            // Animation playback logic
+            if (isPlayingRef.current && loadedAnimationsRef.current.length > 0) {
+                const deltaTime = currentTime - lastTimeRef.current;
+                lastTimeRef.current = currentTime;
+
+                // Field animations run at 30 FPS
+                const FRAME_DURATION = 1000 / 30;
+                animationTimeRef.current += deltaTime * playbackSpeedRef.current;
+
+                const animData = loadedAnimationsRef.current[selectedAnimIndexRef.current];
+                if (animData && animData.frameCount > 0) {
+                    const frameFloat = animationTimeRef.current / FRAME_DURATION;
+                    const frameIndex = Math.floor(frameFloat) % animData.frameCount;
+
+                    if (frameIndex !== currentFrameRef.current) {
+                        currentFrameRef.current = frameIndex;
+                        setCurrentFrame(frameIndex);
+
+                        const frame = animData.animation.getFrame(frameIndex);
+                        applyFrameToMeshes(
+                            frame,
+                            boneMeshesRef.current,
+                            skeletonGroupRef.current,
+                            bonesRef.current,
+                            hrc
+                        );
+                    }
+                }
+            } else {
+                lastTimeRef.current = currentTime;
+            }
+
             controls.update();
             renderer.render(scene, camera);
         };
-        animate();
+        animate(performance.now());
 
         // Handle resize
         const handleResize = () => {
@@ -326,7 +411,8 @@ export function HRCPreview({ data, filename, onLoadFile }) {
                 container.removeChild(renderer.domElement);
             }
         };
-    }, [hrc, onLoadFile, filename]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hrc, onLoadFile, filename, loadedAnimations]);
 
     if (error) {
         return (
@@ -339,6 +425,27 @@ export function HRCPreview({ data, filename, onLoadFile }) {
     }
 
     const hasBones = hrc && hrc.data.bones.length > 0;
+
+    // Helper function to apply a specific frame (for manual scrubbing)
+    const applyFrame = (frameIndex) => {
+        if (loadedAnimations.length === 0 || !boneMeshesRef.current.length) return;
+
+        const animData = loadedAnimations[selectedAnimIndex];
+        if (!animData) return;
+
+        const frame = animData.animation.getFrame(frameIndex);
+        applyFrameToMeshes(
+            frame,
+            boneMeshesRef.current,
+            skeletonGroupRef.current,
+            bonesRef.current,
+            hrc
+        );
+    };
+
+    // Get frame count for current animation
+    const frameCount = loadedAnimations[selectedAnimIndex]?.frameCount || 0;
+    const animationCount = loadedAnimations.length;
 
     return (
         <div className="skeleton-preview">
@@ -371,6 +478,157 @@ export function HRCPreview({ data, filename, onLoadFile }) {
                             <span className="stat-label">With Models</span>
                             <span className="stat-value">{stats?.bonesWithModels || 0}</span>
                         </div>
+                    </div>
+
+                    <div className="skeleton-stat-group">
+                        <h3>Animations</h3>
+                        <div className="skeleton-stat">
+                            <span className="stat-label">Available</span>
+                            <span className="stat-value">{animationCount}</span>
+                        </div>
+
+                        {/* Animation Playback Controls */}
+                        {loadedAnimations.length > 0 && frameCount > 0 && (
+                            <div className="animation-controls">
+                                {/* Animation selector (if multiple animations) */}
+                                {animationCount > 1 && (
+                                    <div className="skeleton-stat animation-selector">
+                                        <span className="stat-label">Animation</span>
+                                        <div className="animation-nav">
+                                            <button
+                                                className="playback-btn"
+                                                onClick={() => {
+                                                    // Find previous animation with frames
+                                                    let newIndex = selectedAnimIndex - 1;
+                                                    while (newIndex >= 0 && loadedAnimations[newIndex].frameCount === 0) {
+                                                        newIndex--;
+                                                    }
+                                                    if (newIndex < 0) {
+                                                        newIndex = animationCount - 1;
+                                                        while (newIndex > selectedAnimIndex && loadedAnimations[newIndex].frameCount === 0) {
+                                                            newIndex--;
+                                                        }
+                                                    }
+                                                    if (newIndex !== selectedAnimIndex && loadedAnimations[newIndex].frameCount > 0) {
+                                                        setSelectedAnimIndex(newIndex);
+                                                        setCurrentFrame(0);
+                                                        animationTimeRef.current = 0;
+                                                        const frame = loadedAnimations[newIndex].animation.getFrame(0);
+                                                        applyFrameToMeshes(frame, boneMeshesRef.current, skeletonGroupRef.current, bonesRef.current, hrc);
+                                                    }
+                                                }}
+                                                title="Previous animation"
+                                            >
+                                                «
+                                            </button>
+                                            <select
+                                                value={selectedAnimIndex}
+                                                onChange={(e) => {
+                                                    const newIndex = Number(e.target.value);
+                                                    setSelectedAnimIndex(newIndex);
+                                                    setCurrentFrame(0);
+                                                    animationTimeRef.current = 0;
+                                                    if (loadedAnimations[newIndex]) {
+                                                        const frame = loadedAnimations[newIndex].animation.getFrame(0);
+                                                        applyFrameToMeshes(frame, boneMeshesRef.current, skeletonGroupRef.current, bonesRef.current, hrc);
+                                                    }
+                                                }}
+                                                className="weapon-select"
+                                            >
+                                                {loadedAnimations.map((anim, i) => (
+                                                    <option key={i} value={i} disabled={anim.frameCount === 0}>
+                                                        {anim.name} ({anim.frameCount} frames)
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                className="playback-btn"
+                                                onClick={() => {
+                                                    // Find next animation with frames
+                                                    let newIndex = selectedAnimIndex + 1;
+                                                    while (newIndex < animationCount && loadedAnimations[newIndex].frameCount === 0) {
+                                                        newIndex++;
+                                                    }
+                                                    if (newIndex >= animationCount) {
+                                                        newIndex = 0;
+                                                        while (newIndex < selectedAnimIndex && loadedAnimations[newIndex].frameCount === 0) {
+                                                            newIndex++;
+                                                        }
+                                                    }
+                                                    if (newIndex !== selectedAnimIndex && loadedAnimations[newIndex].frameCount > 0) {
+                                                        setSelectedAnimIndex(newIndex);
+                                                        setCurrentFrame(0);
+                                                        animationTimeRef.current = 0;
+                                                        const frame = loadedAnimations[newIndex].animation.getFrame(0);
+                                                        applyFrameToMeshes(frame, boneMeshesRef.current, skeletonGroupRef.current, bonesRef.current, hrc);
+                                                    }
+                                                }}
+                                                title="Next animation"
+                                            >
+                                                »
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Playback controls */}
+                                <div className="skeleton-stat playback-controls">
+                                    <button
+                                        className="playback-btn"
+                                        onClick={() => setIsPlaying(!isPlaying)}
+                                        title={isPlaying ? 'Pause' : 'Play'}
+                                    >
+                                        {isPlaying ? '⏸' : '▶'}
+                                    </button>
+                                    <button
+                                        className="playback-btn"
+                                        onClick={() => {
+                                            setCurrentFrame(0);
+                                            animationTimeRef.current = 0;
+                                            applyFrame(0);
+                                        }}
+                                        title="Reset"
+                                    >
+                                        ⏮
+                                    </button>
+                                    <span className="frame-counter">
+                                        {currentFrame + 1}/{frameCount}
+                                    </span>
+                                </div>
+
+                                {/* Frame slider */}
+                                <div className="skeleton-stat frame-slider">
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={frameCount - 1}
+                                        value={currentFrame}
+                                        onChange={(e) => {
+                                            const frame = Number(e.target.value);
+                                            setCurrentFrame(frame);
+                                            animationTimeRef.current = frame * (1000 / 30);
+                                            applyFrame(frame);
+                                        }}
+                                        className="frame-range"
+                                    />
+                                </div>
+
+                                {/* Speed control */}
+                                <div className="skeleton-stat speed-control">
+                                    <span className="stat-label">Speed</span>
+                                    <select
+                                        value={playbackSpeed}
+                                        onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+                                        className="speed-select"
+                                    >
+                                        <option value={0.25}>0.25x</option>
+                                        <option value={0.5}>0.5x</option>
+                                        <option value={1}>1x</option>
+                                        <option value={2}>2x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -413,21 +671,17 @@ export function HRCPreview({ data, filename, onLoadFile }) {
 }
 
 // Build quaternion from Euler angles in YXZ order (matching Kimera's BuildRotationMatrixWithQuaternions)
-// Angles are in degrees
 function buildQuaternionYXZ(alpha, beta, gamma) {
     const DEG2RAD = Math.PI / 180;
 
-    // Convert to radians and halve for quaternion calculation
     const ax = (alpha * DEG2RAD) / 2;
     const ay = (beta * DEG2RAD) / 2;
     const az = (gamma * DEG2RAD) / 2;
 
-    // Build individual axis quaternions
     const qx = new THREE.Quaternion(Math.sin(ax), 0, 0, Math.cos(ax));
     const qy = new THREE.Quaternion(0, Math.sin(ay), 0, Math.cos(ay));
     const qz = new THREE.Quaternion(0, 0, Math.sin(az), Math.cos(az));
 
-    // Multiply in YXZ order: Y * X * Z
     const result = new THREE.Quaternion();
     result.multiplyQuaternions(qy, qx);
     result.multiply(qz);
@@ -435,16 +689,32 @@ function buildQuaternionYXZ(alpha, beta, gamma) {
     return result;
 }
 
-// Fallback placeholder visualization with animation transforms
-function createPlaceholderWithAnimation(hrc, frame) {
-    const group = new THREE.Group();
-    const bones = hrc.data.bones;
+// Apply animation frame to meshes using matrix stack algorithm
+function applyFrameToMeshes(frame, boneMeshes, skeletonGroup, bones, hrc) {
+    if (!frame || !skeletonGroup || !boneMeshes.length) return;
 
-    // Build joint hierarchy using a stack
+    // Apply root position and rotation to skeleton group
+    // The modelContainer's scale flip (scale.y = -1, scale.z = -1) handles coordinate conversion
+    skeletonGroup.position.set(
+        frame.rootTranslation.x,
+        frame.rootTranslation.y,
+        frame.rootTranslation.z
+    );
+    const rootQuat = buildQuaternionYXZ(
+        frame.rootRotation.alpha,
+        frame.rootRotation.beta,
+        frame.rootRotation.gamma
+    );
+    skeletonGroup.quaternion.copy(rootQuat);
+
+    // Rebuild bone matrices using stack algorithm
     const jointStack = [bones[0]?.parentName || 'root'];
     const matrixStack = [new THREE.Matrix4()];
+    const boneMatrices = new Map();
 
-    bones.forEach((bone, idx) => {
+    for (let idx = 0; idx < bones.length; idx++) {
+        const bone = bones[idx];
+
         // Navigate hierarchy - pop until we find matching parent
         while (jointStack.length > 1 && bone.parentName !== jointStack[jointStack.length - 1]) {
             jointStack.pop();
@@ -455,6 +725,51 @@ function createPlaceholderWithAnimation(hrc, frame) {
         const currentMatrix = matrixStack[matrixStack.length - 1].clone();
 
         // Apply bone rotation from animation
+        if (frame.boneRotations[idx]) {
+            const rot = frame.boneRotations[idx];
+            const boneQuat = buildQuaternionYXZ(rot.alpha, rot.beta, rot.gamma);
+            const rotMatrix = new THREE.Matrix4().makeRotationFromQuaternion(boneQuat);
+            currentMatrix.multiply(rotMatrix);
+        }
+
+        // Store matrix for this bone
+        boneMatrices.set(idx, currentMatrix.clone());
+
+        // Translate along -Z by bone length for children
+        const translateMatrix = new THREE.Matrix4().makeTranslation(0, 0, -bone.length);
+        currentMatrix.multiply(translateMatrix);
+
+        // Push for children
+        jointStack.push(bone.name);
+        matrixStack.push(currentMatrix);
+    }
+
+    // Apply computed matrices to meshes
+    for (const { boneIndex, mesh } of boneMeshes) {
+        const matrix = boneMatrices.get(boneIndex);
+        if (matrix) {
+            mesh.matrix.identity();
+            mesh.applyMatrix4(matrix);
+        }
+    }
+}
+
+// Fallback placeholder visualization with animation transforms
+function createPlaceholderWithAnimation(hrc, frame) {
+    const group = new THREE.Group();
+    const bones = hrc.data.bones;
+
+    const jointStack = [bones[0]?.parentName || 'root'];
+    const matrixStack = [new THREE.Matrix4()];
+
+    bones.forEach((bone, idx) => {
+        while (jointStack.length > 1 && bone.parentName !== jointStack[jointStack.length - 1]) {
+            jointStack.pop();
+            matrixStack.pop();
+        }
+
+        const currentMatrix = matrixStack[matrixStack.length - 1].clone();
+
         if (frame && frame.boneRotations[idx]) {
             const rot = frame.boneRotations[idx];
             const boneQuat = buildQuaternionYXZ(rot.alpha, rot.beta, rot.gamma);
@@ -476,7 +791,7 @@ function createPlaceholderWithAnimation(hrc, frame) {
         const b = Math.min(1, 0.2 + depth * 0.08);
         const boneColor = new THREE.Color(r, g, b);
 
-        // Create joint sphere at current position
+        // Create joint sphere
         const jointRadius = Math.max(bone.length * 0.08, 0.1);
         const jointGeometry = new THREE.SphereGeometry(jointRadius, 8, 8);
         const jointMaterial = new THREE.MeshLambertMaterial({
@@ -488,29 +803,25 @@ function createPlaceholderWithAnimation(hrc, frame) {
         jointMesh.applyMatrix4(currentMatrix);
         group.add(jointMesh);
 
-        // Create bone cylinder extending along -Z
+        // Create bone cylinder
         if (bone.length > 0.01) {
             const boneRadius = Math.max(bone.length * 0.04, 0.05);
             const boneGeometry = new THREE.CylinderGeometry(boneRadius, boneRadius, bone.length, 6);
             const boneMaterial = new THREE.MeshLambertMaterial({ color: boneColor });
             const boneMesh = new THREE.Mesh(boneGeometry, boneMaterial);
 
-            // Rotate cylinder to align with -Z axis and position at midpoint
             boneMesh.rotation.x = Math.PI / 2;
             boneMesh.position.z = -bone.length / 2;
 
-            // Create a group to apply the bone transform
             const boneGroup = new THREE.Group();
             boneGroup.add(boneMesh);
             boneGroup.applyMatrix4(currentMatrix);
             group.add(boneGroup);
         }
 
-        // Translate along -Z by bone length for next bone
         const translateMatrix = new THREE.Matrix4().makeTranslation(0, 0, -bone.length);
         currentMatrix.multiply(translateMatrix);
 
-        // Push current bone onto stack
         jointStack.push(bone.name);
         matrixStack.push(currentMatrix);
     });

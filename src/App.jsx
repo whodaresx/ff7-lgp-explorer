@@ -518,7 +518,7 @@ function App() {
 
   const handleSearchChange = useCallback((query) => {
     setSearchQuery(query);
-    setSelectedIndices(new Set());
+    // Don't clear selection - we'll scroll to the selected file if it's still visible
   }, []);
 
   const handleSort = useCallback((column) => {
@@ -686,6 +686,31 @@ function App() {
       }
     }, 0);
   }, [viewMode, expandedNodes, selectedIndices]);
+
+  // Scroll to selected file when search query changes
+  const prevSearchQueryRef = useRef(searchQuery);
+  useEffect(() => {
+    const prevQuery = prevSearchQueryRef.current;
+    prevSearchQueryRef.current = searchQuery;
+
+    // Skip initial render
+    if (prevQuery === searchQuery) return;
+
+    // Scroll to selected file after DOM update
+    setTimeout(() => {
+      if (!fileListRef.current) return;
+
+      const currentDisplayFiles = displayFilesRef.current;
+      if (selectedIndices.size > 0) {
+        const selectedTocIndex = [...selectedIndices][0];
+        const displayIndex = currentDisplayFiles.findIndex(f => f.tocIndex === selectedTocIndex);
+        if (displayIndex >= 0) {
+          fileListRef.current.scrollToIndex(displayIndex);
+        }
+        // If selected file is not in filtered results, don't scroll (keep current position)
+      }
+    }, 0);
+  }, [searchQuery, selectedIndices]);
 
   // Select a file by filename (used when clicking references in status bar)
   const handleSelectFile = useCallback((filename) => {

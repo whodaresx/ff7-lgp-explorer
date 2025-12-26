@@ -48,7 +48,7 @@ export function FieldPreview({ data }) {
     const [showWalkmesh, setShowWalkmesh] = useState(true); // For background mode walkmesh overlay
     const [zoom, setZoom] = useState(100);
     const [layerVisibility, setLayerVisibility] = useState([true, true, true, true]);
-    const [showGrid, setShowGrid] = useState(false);
+    const [showGrid, _setShowGrid] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
     const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
     const [lastPanPos, setLastPanPos] = useState({ x: 0, y: 0 });
@@ -58,7 +58,7 @@ export function FieldPreview({ data }) {
     // Walkmesh-specific state
     const [walkmeshShowGateways, setWalkmeshShowGateways] = useState(true);
     const [walkmeshShowTriangleIds, setWalkmeshShowTriangleIds] = useState(false);
-    const [walkmeshFitBackground, setWalkmeshFitBackground] = useState(false);
+    const [_walkmeshFitBackground, _setWalkmeshFitBackground] = useState(false);
     const walkmeshResetRef = useRef(null);
 
     // Track when background canvas has been rendered (used to sync with WalkmeshPreview)
@@ -370,14 +370,14 @@ export function FieldPreview({ data }) {
         }
     };
 
-    const handleZoomIn = useCallback(() => {
+    const _handleZoomIn = useCallback(() => {
         const currentIndex = ZOOM_LEVELS.indexOf(zoom);
         if (currentIndex < ZOOM_LEVELS.length - 1) {
             setZoom(ZOOM_LEVELS[currentIndex + 1]);
         }
     }, [zoom]);
 
-    const handleZoomOut = useCallback(() => {
+    const _handleZoomOut = useCallback(() => {
         const currentIndex = ZOOM_LEVELS.indexOf(zoom);
         if (currentIndex > 0) {
             setZoom(ZOOM_LEVELS[currentIndex - 1]);
@@ -435,7 +435,7 @@ export function FieldPreview({ data }) {
         }));
     };
 
-    const resetView = () => {
+    const _resetView = () => {
         setZoom(100);
         setPanOffset({ x: 0, y: 0 });
     };
@@ -472,7 +472,7 @@ export function FieldPreview({ data }) {
         name: LAYER_NAMES[i],
     })) || [];
 
-    const textureCount = background?.textures.filter(t => t !== null).length || 0;
+    const _textureCount = background?.textures.filter(t => t !== null).length || 0;
 
     return (
         <div className="field-preview">
