@@ -328,19 +328,22 @@
     gap: 4px;
 }
 
-.animation-nav {
+.animation-nav,
+.weapon-nav {
     display: flex;
     gap: 4px;
     align-items: center;
     width: 100%;
 }
 
-.animation-nav .weapon-select {
+.animation-nav .weapon-select,
+.weapon-nav .weapon-select {
     flex: 1;
     min-width: 0;
 }
 
-.animation-nav .playback-btn {
+.animation-nav .playback-btn,
+.weapon-nav .playback-btn {
     flex-shrink: 0;
 }
 

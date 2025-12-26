@@ -690,17 +690,65 @@ export function SkeletonPreview({ data, filename, onLoadFile }) {
                                     {loadedWeaponModels && loadedWeaponModels.length > 1 && (
                                         <div className="skeleton-stat weapon-selector">
                                             <span className="stat-label">Show Weapon</span>
-                                            <select
-                                                value={selectedWeaponIndex}
-                                                onChange={(e) => setSelectedWeaponIndex(Number(e.target.value))}
-                                                className="weapon-select"
-                                            >
-                                                {loadedWeaponModels.map((weapon, index) => (
-                                                    <option key={index} value={index} disabled={!weapon.pfile}>
-                                                        {index + 1}. {weapon.name}{!weapon.pfile ? ' (not found)' : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            <div className="weapon-nav">
+                                                <button
+                                                    className="playback-btn"
+                                                    onClick={() => {
+                                                        // Find previous weapon with pfile
+                                                        let newIndex = selectedWeaponIndex - 1;
+                                                        while (newIndex >= 0 && !loadedWeaponModels[newIndex].pfile) {
+                                                            newIndex--;
+                                                        }
+                                                        if (newIndex < 0) {
+                                                            // Wrap to last valid weapon
+                                                            newIndex = loadedWeaponModels.length - 1;
+                                                            while (newIndex > selectedWeaponIndex && !loadedWeaponModels[newIndex].pfile) {
+                                                                newIndex--;
+                                                            }
+                                                        }
+                                                        if (newIndex !== selectedWeaponIndex && loadedWeaponModels[newIndex].pfile) {
+                                                            setSelectedWeaponIndex(newIndex);
+                                                        }
+                                                    }}
+                                                    title="Previous weapon"
+                                                >
+                                                    «
+                                                </button>
+                                                <select
+                                                    value={selectedWeaponIndex}
+                                                    onChange={(e) => setSelectedWeaponIndex(Number(e.target.value))}
+                                                    className="weapon-select"
+                                                >
+                                                    {loadedWeaponModels.map((weapon, index) => (
+                                                        <option key={index} value={index} disabled={!weapon.pfile}>
+                                                            {index + 1}. {weapon.name}{!weapon.pfile ? ' (not found)' : ''}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    className="playback-btn"
+                                                    onClick={() => {
+                                                        // Find next weapon with pfile
+                                                        let newIndex = selectedWeaponIndex + 1;
+                                                        while (newIndex < loadedWeaponModels.length && !loadedWeaponModels[newIndex].pfile) {
+                                                            newIndex++;
+                                                        }
+                                                        if (newIndex >= loadedWeaponModels.length) {
+                                                            // Wrap to first valid weapon
+                                                            newIndex = 0;
+                                                            while (newIndex < selectedWeaponIndex && !loadedWeaponModels[newIndex].pfile) {
+                                                                newIndex++;
+                                                            }
+                                                        }
+                                                        if (newIndex !== selectedWeaponIndex && loadedWeaponModels[newIndex].pfile) {
+                                                            setSelectedWeaponIndex(newIndex);
+                                                        }
+                                                    }}
+                                                    title="Next weapon"
+                                                >
+                                                    »
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
                                 </>
